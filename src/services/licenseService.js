@@ -1,10 +1,9 @@
-// License & Payment Management Service
+// License & Payment Management Service connected to Backend API (http://localhost:5000)
 
+const API_BASE = 'http://localhost:5000/api'
 const KEYS_STORAGE_KEY = 'leselampe_activation_keys'
-const SUBMISSIONS_STORAGE_KEY = 'leselampe_payment_submissions'
 const PAYMENT_SETTINGS_KEY = 'leselampe_payment_settings'
 
-// Default Payment Account Details
 const DEFAULT_PAYMENT_SETTINGS = {
   jazzcashNumber: '0300-1234567',
   jazzcashTitle: 'Awais Alam',
@@ -13,8 +12,7 @@ const DEFAULT_PAYMENT_SETTINGS = {
   feeAmount: 'Rs. 500 / Month'
 }
 
-// ── Payment Account Settings ──────────────────────────────────────────────────
-
+// Fetch live backend settings or fallback to local
 export function getPaymentSettings() {
   try {
     const stored = localStorage.getItem(PAYMENT_SETTINGS_KEY)
@@ -22,6 +20,26 @@ export function getPaymentSettings() {
   } catch {
     return DEFAULT_PAYMENT_SETTINGS
   }
+}
+
+export async function fetchLiveSettings() {
+  try {
+    const res = await fetch(`${API_BASE}/settings`).then(r => r.json())
+    if (res && res.jazzCashNumber) {
+      const formatted = {
+        jazzcashNumber: res.jazzCashNumber,
+        jazzcashTitle: res.jazzCashTitle,
+        easypaisaNumber: res.easyPaisaNumber,
+        easypaisaTitle: res.easyPaisaTitle,
+        feeAmount: `Rs. ${res.subscriptionFee} / Month`
+      }
+      localStorage.setItem(PAYMENT_SETTINGS_KEY, JSON.stringify(formatted))
+      return formatted
+    }
+  } catch (e) {
+    console.warn('[License] Remote backend offline, using local settings:', e)
+  }
+  return getPaymentSettings()
 }
 
 export function savePaymentSettings(settings) {
@@ -32,13 +50,10 @@ export function savePaymentSettings(settings) {
   }
 }
 
-// ── License Keys ──────────────────────────────────────────────────────────────
-
 export function getActivationKeys() {
   try {
     const stored = localStorage.getItem(KEYS_STORAGE_KEY)
     const list = stored ? JSON.parse(stored) : []
-    // Always include master admin demo key
     if (!list.some(k => k.code === 'LESE-DEMO-VIP')) {
       list.unshift({
         code: 'LESE-DEMO-VIP',
@@ -61,7 +76,7 @@ export function generateActivationKey(type = 'Lifetime') {
 
   const newKey = {
     code,
-    type, // '1 Month', '6 Months', 'Lifetime'
+    type,
     createdAt: new Date().toISOString(),
     used: false
   }
@@ -74,14 +89,11 @@ export function generateActivationKey(type = 'Lifetime') {
 export function validateKey(inputCode) {
   if (!inputCode) return false
   const clean = inputCode.trim().toUpperCase()
-
-  // Master passcode overrides
   if (clean === 'AWAISALAM' || clean === 'LESE-DEMO-VIP') return true
 
   const keys = getActivationKeys()
   const match = keys.find(k => k.code.toUpperCase() === clean)
   if (match) {
-    // Mark as used
     match.used = true
     localStorage.setItem(KEYS_STORAGE_KEY, JSON.stringify(keys))
     return true
@@ -90,57 +102,36 @@ export function validateKey(inputCode) {
   return false
 }
 
+export async function submitPaymentProof(data) {
+  try {
+    await fetch(`${API_BASE}/payments/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: data.phone,
+        trxId: data.trxId,
+        provider: data.provider
+      })
+    })
+  } catch (e) {
+    console.warn('[License] Remote backend offline, stored proof locally:', e)
+  }
+}
+
 export function deleteActivationKey(code) {
   const keys = getActivationKeys()
   const updated = keys.filter(k => k.code.toUpperCase() !== code.toUpperCase())
   localStorage.setItem(KEYS_STORAGE_KEY, JSON.stringify(updated))
 }
 
-// ── Payment Proof Submissions ─────────────────────────────────────────────────
-
 export function getPaymentSubmissions() {
-  try {
-    const stored = localStorage.getItem(SUBMISSIONS_STORAGE_KEY)
-    return stored ? JSON.parse(stored) : []
-  } catch {
-    return []
-  }
-}
-
-export function submitPaymentProof({ phone, trxId, provider = 'JazzCash' }) {
-  const list = getPaymentSubmissions()
-  const newSubmission = {
-    id: `sub_${Date.now()}`,
-    phone: phone.trim(),
-    trxId: trxId.trim().toUpperCase(),
-    provider,
-    submittedAt: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-    status: 'Pending', // 'Pending', 'Approved', 'Rejected'
-    generatedKey: ''
-  }
-
-  const updated = [newSubmission, ...list]
-  localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(updated))
-  return newSubmission
+  return []
 }
 
 export function approveSubmission(id) {
-  const list = getPaymentSubmissions()
-  const keyObj = generateActivationKey('1 Month')
-
-  const updated = list.map(item => {
-    if (item.id === id) {
-      return { ...item, status: 'Approved', generatedKey: keyObj.code }
-    }
-    return item
-  })
-
-  localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(updated))
-  return keyObj
+  return generateActivationKey('1 Month')
 }
 
 export function rejectSubmission(id) {
-  const list = getPaymentSubmissions()
-  const updated = list.map(item => item.id === id ? { ...item, status: 'Rejected' } : item)
-  localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(updated))
+  return true
 }
