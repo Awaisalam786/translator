@@ -3,7 +3,6 @@ import PasswordLock from './components/PasswordLock'
 import LibraryShelf from './components/LibraryShelf'
 import ReaderView from './components/ReaderView'
 import VocabularyModal from './components/VocabularyModal'
-import AdminPanelModal from './components/AdminPanelModal'
 import ThemeSettingsModal from './components/ThemeSettingsModal'
 import { initStorage } from './services/storageService'
 
@@ -13,7 +12,6 @@ const THEME_STORAGE_KEY = 'leselampe_theme'
 export default function App() {
   const [activeBook, setActiveBook] = useState(null)
   const [showDeckModal, setShowDeckModal] = useState(false)
-  const [showAdminModal, setShowAdminModal] = useState(false)
   const [showThemeModal, setShowThemeModal] = useState(false)
 
   // Reading Theme state ('dark' | 'sepia' | 'light' | 'forest')
@@ -41,26 +39,9 @@ export default function App() {
     }
   })
 
-  // Initialize storage persistence & Secret Admin Listeners on mount
+  // Initialize storage persistence on mount
   useEffect(() => {
     initStorage()
-
-    // 1. Check URL parameters for secret admin trigger: ?admin=true or #admin
-    const urlParams = new URLSearchParams(window.location.search)
-    if (urlParams.get('admin') === 'true' || window.location.hash === '#admin') {
-      setShowAdminModal(true)
-    }
-
-    // 2. Global Secret Keyboard Shortcut: Ctrl + Shift + A (or Cmd + Shift + A)
-    const handleKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
-        e.preventDefault()
-        setShowAdminModal(prev => !prev)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
   // Sync savedWords to localStorage
@@ -144,16 +125,6 @@ export default function App() {
           currentTheme={currentTheme}
           onSelectTheme={(themeId) => setCurrentTheme(themeId)}
           onClose={() => setShowThemeModal(false)}
-        />
-      )}
-
-      {/* Admin Panel Modal (Opened secretly via ?admin=true or Ctrl+Shift+A) */}
-      {showAdminModal && (
-        <AdminPanelModal
-          savedWords={savedWords}
-          onClose={() => setShowAdminModal(false)}
-          onRefreshData={() => {}}
-          onClearDeck={() => setSavedWords([])}
         />
       )}
     </PasswordLock>
