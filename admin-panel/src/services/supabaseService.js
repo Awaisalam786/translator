@@ -7,8 +7,8 @@ const SUPABASE_KEY_KEY = 'leselampe_supabase_anon_key'
 const envUrl = import.meta.env.VITE_SUPABASE_URL
 const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-let currentUrl = envUrl || localStorage.getItem(SUPABASE_URL_KEY) || 'https://xyzcompany.supabase.co'
-let currentKey = envKey || localStorage.getItem(SUPABASE_KEY_KEY) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_key'
+let currentUrl = envUrl || localStorage.getItem(SUPABASE_URL_KEY) || 'https://ppyaxlytlrjtqdpbtjnk.supabase.co'
+let currentKey = envKey || localStorage.getItem(SUPABASE_KEY_KEY) || 'sb_publishable_xfT7EODlWKoMGeJTt7GMHA_qNvN3el-'
 
 let supabase = createClient(currentUrl, currentKey)
 
@@ -53,6 +53,30 @@ export async function getSupabaseUser() {
   } catch {
     return null
   }
+}
+
+// ── Fetch Registered User Profiles Live from Supabase ────────────────────────
+export async function fetchSupabaseProfiles() {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (data && !error) {
+      return data.map(p => ({
+        id: p.id,
+        email: p.email || 'No email registered',
+        role: p.role || 'student',
+        created_at: p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A',
+        trial_started_at: p.trial_started_at,
+        status: 'Active'
+      }))
+    }
+  } catch (e) {
+    console.warn('[Supabase] fetchProfiles error:', e)
+  }
+  return []
 }
 
 // ── Fetch Settings from Supabase ──────────────────────────────────────────────
@@ -101,14 +125,14 @@ export async function fetchSupabaseLicenses() {
       return data.map(d => ({
         key: d.key,
         type: d.type,
-        createdAt: d.created_at,
+        createdAt: d.created_at ? new Date(d.created_at).toLocaleDateString() : 'N/A',
         status: d.status
       }))
     }
   } catch (e) {
     console.warn('[Supabase] fetchLicenses error:', e)
   }
-  return null
+  return []
 }
 
 export async function generateSupabaseLicense(type = '1 Month') {
@@ -129,7 +153,7 @@ export async function generateSupabaseLicense(type = '1 Month') {
       return {
         key: data.key,
         type: data.type,
-        createdAt: data.created_at,
+        createdAt: data.created_at ? new Date(data.created_at).toLocaleDateString() : 'N/A',
         status: data.status
       }
     }
@@ -137,7 +161,7 @@ export async function generateSupabaseLicense(type = '1 Month') {
     console.error('[Supabase] generateLicense error:', e)
   }
 
-  return { key, type, createdAt: new Date().toISOString(), status: 'Active' }
+  return { key, type, createdAt: new Date().toLocaleDateString(), status: 'Active' }
 }
 
 // ── Fetch & Manage Payments in Supabase ──────────────────────────────────────
@@ -159,7 +183,7 @@ export async function fetchSupabasePayments() {
   } catch (e) {
     console.warn('[Supabase] fetchPayments error:', e)
   }
-  return null
+  return []
 }
 
 export async function approveSupabasePayment(paymentId) {
@@ -193,11 +217,12 @@ export async function fetchSupabaseAnnouncements() {
   } catch (e) {
     console.warn('[Supabase] fetchAnnouncements error:', e)
   }
-  return null
+  return []
 }
 
 export async function publishSupabaseAnnouncement(title, message, version = '2.1.0') {
   const payload = {
+    id: `ann_${Date.now()}`,
     title,
     message,
     version,

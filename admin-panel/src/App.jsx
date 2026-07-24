@@ -13,6 +13,7 @@ import {
   fetchSupabaseLicenses, generateSupabaseLicense,
   fetchSupabasePayments, approveSupabasePayment,
   fetchSupabaseAnnouncements, publishSupabaseAnnouncement,
+  fetchSupabaseProfiles,
   getSupabaseCredentials, configureSupabase,
   supabaseAdminLogin, supabaseAdminLogout, getSupabaseUser
 } from './services/supabaseService'
@@ -73,23 +74,19 @@ export default function App() {
   const fetchAllData = async () => {
     setLoading(true)
 
-    const [supSet, supLic, supPay, supAnn] = await Promise.all([
+    const [supSet, supLic, supPay, supAnn, supPro] = await Promise.all([
       fetchSupabaseSettings(),
       fetchSupabaseLicenses(),
       fetchSupabasePayments(),
-      fetchSupabaseAnnouncements()
+      fetchSupabaseAnnouncements(),
+      fetchSupabaseProfiles()
     ])
 
     if (supSet) setSettings(supSet)
     if (supLic) setLicenses(supLic)
     if (supPay) setPayments(supPay)
     if (supAnn) setAnnouncements(supAnn)
-
-    setUsersList([
-      { id: 'usr_1', email: 'admin@leselampe.com', role: 'admin', created_at: '2026-07-01', status: 'Active' },
-      { id: 'usr_2', email: 'student1@gmail.com', role: 'student', created_at: '2026-07-15', status: 'Active' },
-      { id: 'usr_3', email: 'student2@yahoo.com', role: 'student', created_at: '2026-07-20', status: 'Active' }
-    ])
+    if (supPro) setUsersList(supPro)
 
     setLoading(false)
   }
