@@ -1,0 +1,527 @@
+import React, { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
+import { BookOpen, ShieldCheck, Mail, Lock, ArrowRight, RefreshCw, CheckCircle2, Clock, DollarSign, AlertCircle } from 'lucide-react'
+import { getPaymentSettings } from '../services/licenseService'
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://xyzcompany.supabase.co'
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_key'
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+export default function StudentAuthGate({ children }) {
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [authMode, setAuthMode] = useState('login') // 'login' | 'signup' | 'forgot'
+
+  // Form Inputs
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
+
+  // Access State
+  const [trialDaysLeft, setTrialDaysLeft] = useState(3)
+  const [hasActiveAccess, setHasActiveAccess] = useState(false)
+  const [checkingAccess, setCheckingAccess] = useState(true)
+
+  // Payment Proof Form
+  const [phone, setPhone] = useState('')
+  const [trxId, setTrxId] = useState('')
+  const [provider, setProvider] = useState('JazzCash')
+  const [submittingPayment, setSubmittingPayment] = useState(false)
+  const [paymentSubmitted, setPaymentSubmitted] = useState(false)
+
+  const paymentSettings = getPaymentSettings()
+
+  useEffect(() => {
+    // Check initial auth session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      if (session?.user) {
+        verifyUserTrialAndAccess(session.user)
+      } else {
+        setLoading(false)
+        setCheckingAccess(false)
+      }
+    })
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      if (session?.user) {
+        verifyUserTrialAndAccess(session.user)
+      } else {
+        setHasActiveAccess(false)
+        setLoading(false)
+        setCheckingAccess(false)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // Verify 3-Day Trial & License Status
+  const verifyUserTrialAndAccess = async (user) => {
+    setCheckingAccess(true)
+    try {
+      // 1. Fetch Profile for trial_started_at
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+
+      const trialStart = profile?.trial_started_at ? new Date(profile.trial_started_at) : new Date()
+      const now = new Date()
+      const diffTime = now.getTime() - trialStart.getTime()
+      const diffDays = diffTime / (1000 * 3600 * 24)
+
+      const remaining = Math.max(0, Math.ceil(3 - diffDays))
+      setTrialDaysLeft(remaining)
+
+      // 2. Check for active license
+      const { data: userLicenses } = await supabase
+        .from('licenses')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'Active')
+
+      const hasLicense = userLicenses && userLicenses.length > 0
+
+      // Access granted if within 3-day trial OR has active license
+      if (diffDays <= 3 || hasLicense) {
+        setHasActiveAccess(true)
+      } else {
+        setHasActiveAccess(false)
+      }
+    } catch (e) {
+      console.warn('[AuthGate] Fallback to open access:', e)
+      setHasActiveAccess(true)
+    } finally {
+      setLoading(false)
+      setCheckingAccess(false)
+    }
+  }
+
+  // Handle Login
+  const handleLogin = async (e) => {
+    e.preventDefault()
+    setErrorMsg('')
+    setSuccessMsg('')
+    setLoading(true)
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      setErrorMsg(error.message)
+      setLoading(false)
+    }
+  }
+
+  // Handle Sign Up
+  const handleSignUp = async (e) => {
+    e.preventDefault()
+    setErrorMsg('')
+    setSuccessMsg('')
+    setLoading(true)
+
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    if (error) {
+      setErrorMsg(error.message)
+      setLoading(false)
+    } else {
+      setSuccessMsg('Account created successfully! Enjoy your 3-Day Free Trial.')
+      setLoading(false)
+    }
+  }
+
+  // Handle Password Reset
+  const handleForgot = async (e) => {
+    e.preventDefault()
+    setErrorMsg('')
+    setSuccessMsg('')
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email)
+    if (error) {
+      setErrorMsg(error.message)
+    } else {
+      setSuccessMsg('Password reset link sent to your email!')
+    }
+  }
+
+  // Submit Payment Proof
+  const handlePaymentSubmit = async (e) => {
+    e.preventDefault()
+    if (!phone || !trxId || !session?.user) return
+    setSubmittingPayment(true)
+
+    try {
+      const newPayment = {
+        id: `trx_${Date.now()}`,
+        user_id: session.user.id,
+        phone,
+        trx_id: trxId,
+        provider,
+        amount: 500,
+        status: 'Pending',
+        date: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+      }
+
+      await supabase.from('payments').insert([newPayment])
+      setPaymentSubmitted(true)
+    } catch (e) {
+      console.error('[Payment] Submit error:', e)
+    } finally {
+      setSubmittingPayment(false)
+    }
+  }
+
+  // Handle Sign Out
+  const handleSignOut = () => {
+    supabase.auth.signOut()
+  }
+
+  // ── 1. LOADING SCREEN ───────────────────────────────────────────────────────
+  if (loading || checkingAccess) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#0f121d', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+        <RefreshCw size={28} className="spin" color="#d97706" style={{ marginRight: '10px' }} />
+        <span>Loading Leselampe Reader...</span>
+      </div>
+    )
+  }
+
+  // ── 2. LOGIN / SIGNUP / FORGOT PASSWORD SCREEN ───────────────────────────────
+  if (!session) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#0f121d',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        background: 'radial-gradient(ellipse at top, #1a1d2e 0%, #0f121d 75%)'
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '420px',
+          backgroundColor: '#1a1d2e',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: '20px',
+          padding: '36px 28px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.6)'
+        }}>
+          {/* Header Brand */}
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <div style={{
+              width: '56px', height: '56px', borderRadius: '16px',
+              background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff',
+              margin: '0 auto 14px', boxShadow: '0 8px 24px rgba(217, 119, 6, 0.35)'
+            }}>
+              <BookOpen size={28} />
+            </div>
+
+            <h1 style={{ fontFamily: '"Merriweather", serif', fontSize: '1.6rem', fontWeight: 700, margin: '0 0 4px 0', color: '#f8fafc' }}>
+              Leselampe Reader<span style={{ color: '#d97706' }}>.</span>
+            </h1>
+            <p style={{ fontSize: '0.85rem', color: '#94a3b8', margin: 0 }}>
+              Foreign Language Reader with 3-Day Free Trial
+            </p>
+          </div>
+
+          {/* Mode Switcher */}
+          <div style={{ display: 'flex', backgroundColor: '#12151e', borderRadius: '10px', padding: '4px', marginBottom: '20px' }}>
+            <button
+              onClick={() => { setAuthMode('login'); setErrorMsg(''); setSuccessMsg('') }}
+              style={{
+                flex: 1, padding: '8px', border: 'none', borderRadius: '8px',
+                backgroundColor: authMode === 'login' ? '#d97706' : 'transparent',
+                color: authMode === 'login' ? '#fff' : '#94a3b8',
+                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer'
+              }}
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => { setAuthMode('signup'); setErrorMsg(''); setSuccessMsg('') }}
+              style={{
+                flex: 1, padding: '8px', border: 'none', borderRadius: '8px',
+                backgroundColor: authMode === 'signup' ? '#d97706' : 'transparent',
+                color: authMode === 'signup' ? '#fff' : '#94a3b8',
+                fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer'
+              }}
+            >
+              Start Free Trial
+            </button>
+          </div>
+
+          {errorMsg && (
+            <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', padding: '10px 14px', color: '#ef4444', fontSize: '0.82rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertCircle size={16} />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {successMsg && (
+            <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px', padding: '10px 14px', color: '#10b981', fontSize: '0.82rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CheckCircle2 size={16} />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          {/* Login Form */}
+          {authMode === 'login' && (
+            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Email Address</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="student@gmail.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Password</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                <button
+                  type="button"
+                  onClick={() => setAuthMode('forgot')}
+                  style={{ background: 'none', border: 'none', color: '#d97706', fontSize: '0.78rem', cursor: 'pointer' }}
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', backgroundColor: '#d97706', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <span>Sign In to Reader</span>
+                <ArrowRight size={18} />
+              </button>
+            </form>
+          )}
+
+          {/* Sign Up Form */}
+          {authMode === 'signup' && (
+            <form onSubmit={handleSignUp} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Email Address</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="student@gmail.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Password (min 6 chars)</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', backgroundColor: '#10b981', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <span>Start 3-Day Free Trial</span>
+                <ArrowRight size={18} />
+              </button>
+            </form>
+          )}
+
+          {/* Forgot Password */}
+          {authMode === 'forgot' && (
+            <form onSubmit={handleForgot} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Enter Your Email</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="student@gmail.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', backgroundColor: '#d97706', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Send Reset Link
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── 3. TRIAL EXPIRED PAYWALL SCREEN ─────────────────────────────────────────
+  if (!hasActiveAccess) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#0f121d',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        background: 'radial-gradient(ellipse at top, #1a1d2e 0%, #0f121d 75%)'
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '460px',
+          backgroundColor: '#1a1d2e',
+          border: '1px solid rgba(245, 158, 11, 0.4)',
+          borderRadius: '20px',
+          padding: '36px 28px',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.6)'
+        }}>
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <div style={{
+              width: '56px', height: '56px', borderRadius: '16px',
+              backgroundColor: 'rgba(245, 158, 11, 0.2)', border: '1px solid #f59e0b',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b',
+              margin: '0 auto 14px'
+            }}>
+              <Clock size={28} />
+            </div>
+
+            <h1 style={{ fontFamily: '"Merriweather", serif', fontSize: '1.5rem', fontWeight: 700, margin: '0 0 6px 0', color: '#f8fafc' }}>
+              Your 3-Day Free Trial Has Ended
+            </h1>
+            <p style={{ fontSize: '0.85rem', color: '#94a3b8', margin: 0 }}>
+              Subscribe to unlock full access to Leselampe Reader
+            </p>
+          </div>
+
+          {/* Payment Account Details */}
+          <div style={{ backgroundColor: '#12151e', borderRadius: '12px', padding: '16px', marginBottom: '20px', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#f59e0b', marginBottom: '10px' }}>
+              Payment Methods ({paymentSettings.feeAmount})
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#e2e8f0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div>📱 <strong>JazzCash</strong>: {paymentSettings.jazzcashNumber} ({paymentSettings.jazzcashTitle})</div>
+              <div>📱 <strong>EasyPaisa</strong>: {paymentSettings.easypaisaNumber} ({paymentSettings.easypaisaTitle})</div>
+            </div>
+          </div>
+
+          {paymentSubmitted ? (
+            <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10b981', borderRadius: '12px', padding: '20px', textAlign: 'center', color: '#10b981' }}>
+              <CheckCircle2 size={32} style={{ margin: '0 auto 8px' }} />
+              <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '4px' }}>Payment Proof Submitted!</div>
+              <div style={{ fontSize: '0.82rem', color: '#e2e8f0' }}>
+                Your payment is currently pending approval by the Admin. Once verified, your reader will be unlocked automatically.
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handlePaymentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Payment Provider</label>
+                <select
+                  value={provider}
+                  onChange={(e) => setProvider(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}
+                >
+                  <option value="JazzCash">JazzCash</option>
+                  <option value="EasyPaisa">EasyPaisa</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Your Sender Mobile Number</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="0300-1234567"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Transaction ID (TRX ID)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 9876543210"
+                  value={trxId}
+                  onChange={(e) => setTrxId(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingPayment}
+                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: 'none', backgroundColor: '#d97706', color: '#fff', fontWeight: 700, cursor: 'pointer', marginTop: '6px' }}
+              >
+                {submittingPayment ? 'Submitting Proof...' : 'Submit Payment Proof'}
+              </button>
+            </form>
+          )}
+
+          <div style={{ textAlign: 'center', marginTop: '20px' }}>
+            <button
+              onClick={handleSignOut}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.82rem', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Sign out of account
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── 4. UNLOCKED READER VIEW WITH TRIAL BADGE ───────────────────────────────
+  return (
+    <div>
+      {/* Top Banner indicating trial days remaining */}
+      {trialDaysLeft > 0 && (
+        <div style={{
+          backgroundColor: '#d97706',
+          color: '#ffffff',
+          fontSize: '0.78rem',
+          fontWeight: 700,
+          padding: '4px 12px',
+          textAlign: 'center',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px'
+        }}>
+          <Clock size={14} />
+          <span>Free Trial Active: {trialDaysLeft} {trialDaysLeft === 1 ? 'day' : 'days'} remaining</span>
+        </div>
+      )}
+      {children}
+    </div>
+  )
+}

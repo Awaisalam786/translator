@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as ImageIcon, Bookmark, Sparkles, Palette } from 'lucide-react'
+import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as ImageIcon, Bookmark, Sparkles, Palette, LogOut } from 'lucide-react'
 import { getBooksMetadata, deleteBookComplete, getStorageStatus } from '../services/storageService'
 import { processBookUpload } from '../services/bookProcessor'
 
@@ -154,7 +154,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
                 background: 'rgba(255, 255, 255, 0.08)',
                 border: '1px solid rgba(255, 255, 255, 0.12)',
                 borderRadius: '24px',
-                color: '#f8fafc',
+                color: 'var(--text-bright)',
                 padding: '8px 14px',
                 fontSize: '0.85rem',
                 fontWeight: 600,
@@ -164,7 +164,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
                 gap: '6px'
               }}
             >
-              <Palette size={16} color="#f59e0b" />
+              <Palette size={16} color="var(--accent-gold)" />
               <span>Theme</span>
             </button>
           )}
@@ -173,7 +173,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
             <button
               onClick={onOpenDeck}
               style={{
-                background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+                background: 'linear-gradient(135deg, var(--accent-gold) 0%, var(--accent-gold-hover) 100%)',
                 border: 'none',
                 borderRadius: '24px',
                 color: '#ffffff',
@@ -184,14 +184,43 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                boxShadow: '0 4px 14px rgba(217, 119, 6, 0.35)',
-                transition: 'transform 0.15s ease'
+                boxShadow: '0 4px 14px rgba(0,0,0,0.25)'
               }}
             >
-              <Bookmark size={16} />
-              <span>Vocabulary Deck ({savedWordsCount})</span>
+              <Star size={16} />
+              <span>My Vocabulary ({savedWordsCount})</span>
             </button>
           )}
+
+          <button
+            onClick={() => {
+              if (window.confirm('Are you sure you want to sign out?')) {
+                import('@supabase/supabase-js').then(() => {
+                  const url = import.meta.env.VITE_SUPABASE_URL || 'https://xyzcompany.supabase.co'
+                  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || 'dummy'
+                  const { createClient } = require('@supabase/supabase-js')
+                  createClient(url, key).auth.signOut().then(() => window.location.reload())
+                }).catch(() => window.location.reload())
+              }
+            }}
+            title="Sign Out"
+            style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '24px',
+              color: '#ef4444',
+              padding: '8px 12px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <LogOut size={16} />
+            <span>Sign Out</span>
+          </button>
         </div>
       </header>
 

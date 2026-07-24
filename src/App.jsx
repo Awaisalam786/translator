@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import PasswordLock from './components/PasswordLock'
+import StudentAuthGate from './components/StudentAuthGate'
 import LibraryShelf from './components/LibraryShelf'
 import ReaderView from './components/ReaderView'
 import VocabularyModal from './components/VocabularyModal'
@@ -90,7 +90,7 @@ export default function App() {
   }
 
   return (
-    <PasswordLock>
+    <StudentAuthGate>
       {activeBook === null ? (
         <LibraryShelf
           onSelectBook={(book) => setActiveBook(book)}
@@ -127,6 +127,6 @@ export default function App() {
           onClose={() => setShowThemeModal(false)}
         />
       )}
-    </PasswordLock>
+    </StudentAuthGate>
   )
 }
