@@ -1,0 +1,591 @@
+import React, { useState, useEffect, useRef } from 'react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Globe, Palette } from 'lucide-react'
+import { getLargeData, saveBooksMetadata, getBooksMetadata } from '../services/storageService'
+import TranslationSlip from './TranslationSlip'
+import VisualPdfReader from './VisualPdfReader'
+
+export default function ReaderView({
+  book,
+  onBackToLibrary,
+  savedWordsCount = 0,
+  onOpenDeck,
+  onOpenTheme,
+  onToggleFavorite,
+  isWordFavorite
+}) {
+  const [currentPage, setCurrentPage] = useState(book.lastPage || 1)
+  const [targetLang, setTargetLang] = useState(() => localStorage.getItem('leselampe_target_lang') || 'en')
+  const [bookData, setBookData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  // Word Selection & Translation Slip State
+  const [selectedWord, setSelectedWord] = useState(null)
+  const [selectedRect, setSelectedRect] = useState(null)
+  const [selectedTokenKey, setSelectedTokenKey] = useState(null)
+  const [sentenceContext, setSentenceContext] = useState('')
+
+  // State for font size of tapped word
+  const [selectedFontSize, setSelectedFontSize] = useState('1.15rem')
+
+  // Handle word tap in text / OCR / PDF layer
+  const handleWordTap = (word, context = '', rect = null, tokenKey = null, fontSize = '1.15rem') => {
+    const clean = word.replace(/^[^a-zA-Z\u00C0-\u024F\u1E00-\u1EFF]+|[^a-zA-Z\u00C0-\u024F\u1E00-\u1EFF]+$/g, '').trim()
+    if (clean && clean.length > 0) {
+      setSelectedWord(clean)
+      setSentenceContext(context)
+      setSelectedRect(rect)
+      setSelectedTokenKey(tokenKey)
+      setSelectedFontSize(fontSize)
+    }
+  }
+
+  // Persist target language choice
+  useEffect(() => {
+    localStorage.setItem('leselampe_target_lang', targetLang)
+  }, [targetLang])
+
+  // Load main book data blob from storage
+  useEffect(() => {
+    let isMounted = true
+    setLoading(true)
+
+    getLargeData(`book_blob_${book.id}`).then((data) => {
+      if (isMounted) {
+        setBookData(data)
+        setLoading(false)
+      }
+    })
+
+    return () => {
+      isMounted = false
+    }
+  }, [book.id])
+
+  // Save current page state on navigation
+  const handlePageChange = (newPage) => {
+    const validPage = Math.max(1, Math.min(book.totalPages, newPage))
+    setCurrentPage(validPage)
+    clearSelection()
+
+    // Update lastPage in books metadata
+    const books = getBooksMetadata()
+    const updated = books.map(b => b.id === book.id ? { ...b, lastPage: validPage } : b)
+    saveBooksMetadata(updated)
+  }
+
+  const clearSelection = () => {
+    setSelectedWord(null)
+    setSelectedRect(null)
+    setSelectedTokenKey(null)
+    setSentenceContext('')
+  }
+
+  const progressPct = Math.round((currentPage / book.totalPages) * 100)
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100vh',
+      width: '100vw',
+      backgroundColor: 'var(--bg-dark)',
+      color: 'var(--text-main)',
+      overflow: 'hidden',
+      transition: 'background-color 0.25s ease, color 0.25s ease'
+    }}>
+      {/* ── Top Bar Header ────────────────────────────────────────────────────── */}
+      <header style={{
+        flexShrink: 0,
+        backgroundColor: 'var(--bg-card)',
+        borderBottom: '1px solid var(--border-subtle)',
+        padding: '10px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        position: 'relative',
+        zIndex: 50,
+        gap: '10px'
+      }}>
+        {/* Left: Back to Shelf & Book Title */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flexShrink: 0, maxWidth: '40%' }}>
+          <button
+            onClick={onBackToLibrary}
+            style={{
+              background: 'rgba(255, 255, 255, 0.12)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '8px',
+              color: '#ffffff',
+              padding: '6px 12px',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              flexShrink: 0
+            }}
+          >
+            <ArrowLeft size={16} />
+            <span>Shelf</span>
+          </button>
+
+          <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            <h2 style={{
+              fontFamily: '"Merriweather", "Georgia", serif',
+              fontSize: '0.9rem',
+              fontWeight: 700,
+              color: '#f8fafc',
+              margin: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
+              {book.title}
+            </h2>
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+              {book.sourceLangName || 'German'} · {book.totalPages} pages
+            </span>
+          </div>
+        </div>
+
+        {/* Center: Top Page Controls */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          backgroundColor: '#12151e',
+          padding: '4px 8px',
+          borderRadius: '8px',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          flexShrink: 0
+        }}>
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage <= 1}
+            style={{
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: 'none',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              padding: '4px 8px',
+              cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+              opacity: currentPage <= 1 ? 0.3 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '0.78rem',
+              fontWeight: 600
+            }}
+          >
+            <ChevronLeft size={14} />
+            <span>Prev</span>
+          </button>
+
+          <span style={{ fontSize: '0.8rem', fontWeight: 600, minWidth: '65px', textAlign: 'center', color: '#f8fafc' }}>
+            {currentPage} / {book.totalPages}
+          </span>
+
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage >= book.totalPages}
+            style={{
+              background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+              border: 'none',
+              borderRadius: '6px',
+              color: '#ffffff',
+              padding: '4px 10px',
+              cursor: currentPage >= book.totalPages ? 'not-allowed' : 'pointer',
+              opacity: currentPage >= book.totalPages ? 0.3 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              boxShadow: '0 2px 6px rgba(217, 119, 6, 0.3)'
+            }}
+          >
+            <span>Next</span>
+            <ChevronRight size={14} />
+          </button>
+        </div>
+
+        {/* Right: Target Language Dropdown, Theme & Deck Buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Globe size={14} color="#94a3b8" />
+            <select
+              value={targetLang}
+              onChange={(e) => setTargetLang(e.target.value)}
+              style={{
+                backgroundColor: '#12151e',
+                color: '#f8fafc',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '6px',
+                padding: '4px 6px',
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              <option value="en">English</option>
+              <option value="ur">اردو</option>
+              <option value="hi">हिंदी</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="ar">العربية</option>
+              <option value="tr">Türkçe</option>
+              <option value="zh">中文</option>
+            </select>
+          </div>
+
+          {/* Theme Button */}
+          {onOpenTheme && (
+            <button
+              onClick={onOpenTheme}
+              title="Theme Settings"
+              style={{
+                background: 'rgba(255, 255, 255, 0.08)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '6px',
+                color: '#f8fafc',
+                padding: '4px 8px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              <Palette size={14} color="#f59e0b" />
+              <span>Theme</span>
+            </button>
+          )}
+
+          {/* Deck Button */}
+          {onOpenDeck && (
+            <button
+              onClick={onOpenDeck}
+              style={{
+                background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#ffffff',
+                padding: '5px 10px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                boxShadow: '0 2px 8px rgba(217, 119, 6, 0.3)'
+              }}
+            >
+              <span>Deck ({savedWordsCount})</span>
+            </button>
+          )}
+        </div>
+
+        {/* Thin Progress Bar Line */}
+        <div style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          width: `${progressPct}%`,
+          height: '3px',
+          backgroundColor: '#d97706',
+          transition: 'width 0.2s ease'
+        }} />
+      </header>
+
+      {/* ── Floating Bottom Navigation Pill ── */}
+      <div style={{
+        position: 'fixed',
+        bottom: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 100,
+        backgroundColor: '#1a1d2e',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        borderRadius: '30px',
+        padding: '6px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.6)'
+      }}>
+        {/* Bottom Shelf Button Backup */}
+        <button
+          onClick={onBackToLibrary}
+          title="Back to Shelf"
+          style={{
+            background: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            borderRadius: '20px',
+            color: '#f8fafc',
+            padding: '5px 10px',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+        >
+          <ArrowLeft size={14} />
+          <span>Shelf</span>
+        </button>
+
+        <div style={{ width: '1px', height: '18px', backgroundColor: 'rgba(255,255,255,0.12)' }} />
+
+        <button
+          onClick={() => handlePageChange(currentPage - 1)}
+          disabled={currentPage <= 1}
+          style={{
+            background: 'rgba(255, 255, 255, 0.08)',
+            border: 'none',
+            borderRadius: '20px',
+            color: '#f8fafc',
+            padding: '5px 12px',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+            opacity: currentPage <= 1 ? 0.3 : 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+        >
+          <ChevronLeft size={15} />
+          <span>Prev</span>
+        </button>
+
+        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc', minWidth: '65px', textAlign: 'center' }}>
+          {currentPage} / {book.totalPages}
+        </span>
+
+        <button
+          onClick={() => handlePageChange(currentPage + 1)}
+          disabled={currentPage >= book.totalPages}
+          style={{
+            background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+            border: 'none',
+            borderRadius: '20px',
+            color: '#ffffff',
+            padding: '5px 14px',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            cursor: currentPage >= book.totalPages ? 'not-allowed' : 'pointer',
+            opacity: currentPage >= book.totalPages ? 0.3 : 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            boxShadow: '0 4px 12px rgba(217, 119, 6, 0.4)'
+          }}
+        >
+          <span>Next</span>
+          <ChevronRight size={15} />
+        </button>
+      </div>
+
+      {/* ── Main Content Viewer Area ────────────────────────────────────────── */}
+      <main style={{
+        flex: 1,
+        overflow: book.type === 'pdf' ? 'hidden' : 'auto',
+        backgroundColor: '#12151e',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        padding: book.type === 'pdf' ? '0' : '24px 16px 80px',
+        boxSizing: 'border-box',
+        width: '100%',
+        height: '100%'
+      }}>
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginTop: '80px', color: '#94a3b8' }}>
+            <Loader2 size={32} color="#d97706" style={{ animation: 'spin 1s linear infinite' }} />
+            <span>Loading book contents…</span>
+          </div>
+        ) : (
+          <>
+            {/* TYPE A: PDF Book */}
+            {book.type === 'pdf' && (
+              <VisualPdfReader
+                fileBuffer={bookData}
+                currentPage={currentPage}
+                onSelectWord={(word, rect) => handleWordTap(word, '', rect)}
+              />
+            )}
+
+            {/* TYPE B: Text (.txt) Book */}
+            {book.type === 'txt' && Array.isArray(bookData) && (
+              <TextViewer
+                pageText={bookData[currentPage - 1] || ''}
+                selectedTokenKey={selectedTokenKey}
+                onWordTap={handleWordTap}
+              />
+            )}
+
+            {/* TYPE C: Photos of Pages */}
+            {book.type === 'photos' && bookData?.pageImages && (
+              <PhotoPageViewer
+                imageDataUrl={bookData.pageImages[currentPage - 1]}
+                ocrData={bookData.ocrPages?.[currentPage - 1]}
+                selectedTokenKey={selectedTokenKey}
+                onWordTap={handleWordTap}
+              />
+            )}
+          </>
+        )}
+      </main>
+
+      {/* ── Word Translation Slip Popup ──────────────────────────────────────── */}
+      {selectedWord && (
+        <TranslationSlip
+          word={selectedWord}
+          sourceLang={book.sourceLang || 'de'}
+          targetLang={targetLang}
+          sentenceContext={sentenceContext}
+          targetRect={selectedRect}
+          fontSize={selectedFontSize}
+          isFavorite={isWordFavorite ? isWordFavorite(selectedWord) : false}
+          onToggleFavorite={onToggleFavorite}
+          onClose={clearSelection}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Text Page Component (spans for every word) ─────────────────────────────────
+
+function TextViewer({ pageText, selectedTokenKey, onWordTap }) {
+  if (!pageText) {
+    return <div style={{ color: '#94a3b8' }}>Page unavailable</div>
+  }
+
+  const paragraphs = pageText.split('\n\n')
+
+  return (
+    <div style={{
+      maxWidth: '740px',
+      width: '100%',
+      backgroundColor: '#1a1d2e',
+      border: '1px solid rgba(255, 255, 255, 0.08)',
+      borderRadius: '16px',
+      padding: '40px 48px',
+      boxSizing: 'border-box',
+      boxShadow: '0 12px 40px rgba(0,0,0,0.4)',
+      color: '#e2e8f0',
+      fontFamily: '"Merriweather", "Georgia", serif',
+      fontSize: '1.15rem',
+      lineHeight: 1.85,
+      letterSpacing: '0.01em'
+    }}>
+      {paragraphs.map((para, pIdx) => {
+        const tokens = para.split(/(\s+)/)
+        return (
+          <p key={pIdx} style={{ marginBottom: '1.4em', marginTop: 0 }}>
+            {tokens.map((token, tIdx) => {
+              if (/^\s+$/.test(token)) {
+                return token
+              }
+              const key = `${pIdx}_${tIdx}`
+              const isSelected = selectedTokenKey === key
+
+              return (
+                <span
+                  key={tIdx}
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    const fs = window.getComputedStyle(e.currentTarget).fontSize
+                    onWordTap(token, para, rect, key, fs)
+                  }}
+                  className="tappable-word"
+                  style={{
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                    padding: '2px 4px',
+                    backgroundColor: isSelected ? '#d97706' : 'transparent',
+                    color: isSelected ? '#ffffff' : 'inherit',
+                    fontWeight: isSelected ? 700 : 'normal',
+                    transition: 'all 0.1s ease'
+                  }}
+                >
+                  {token}
+                </span>
+              )
+            })}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Photo Page Component with OCR Interactive Word Overlay ─────────────────────
+
+function PhotoPageViewer({ imageDataUrl, ocrData, selectedTokenKey, onWordTap }) {
+  if (!imageDataUrl) {
+    return <div style={{ color: '#94a3b8' }}>Page image unavailable</div>
+  }
+
+  const words = ocrData?.words || []
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        maxWidth: '800px',
+        width: '100%',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        backgroundColor: '#000000'
+      }}
+    >
+      {/* Background Page Image */}
+      <img
+        src={imageDataUrl}
+        alt="Page"
+        style={{
+          width: '100%',
+          height: 'auto',
+          display: 'block'
+        }}
+      />
+
+      {/* Invisible Interactive Word Layer */}
+      {words.map((w, idx) => {
+        const leftPct = (w.x / ocrData.imageWidth) * 100
+        const topPct = (w.y / ocrData.imageHeight) * 100
+        const widthPct = (w.width / ocrData.imageWidth) * 100
+        const heightPct = (w.height / ocrData.imageHeight) * 100
+        const key = `ocr_${idx}`
+        const isSelected = selectedTokenKey === key
+
+        return (
+          <div
+            key={idx}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              onWordTap(w.word, ocrData.text, rect, key)
+            }}
+            className="ocr-word-hitbox"
+            style={{
+              position: 'absolute',
+              left: `${leftPct}%`,
+              top: `${topPct}%`,
+              width: `${widthPct}%`,
+              height: `${heightPct}%`,
+              cursor: 'pointer',
+              borderRadius: '2px',
+              backgroundColor: isSelected ? 'rgba(217, 119, 6, 0.45)' : 'transparent',
+              border: isSelected ? '1px solid #d97706' : 'none'
+            }}
+          />
+        )
+      })}
+    </div>
+  )
+}

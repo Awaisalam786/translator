@@ -1,0 +1,147 @@
+/* Global Styles & Design System for Leselampe */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Georgia&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap');
+
+:root {
+  --bg-dark: #0f121d;
+  --bg-card: #1a1d2e;
+  --bg-paper: #1e2230;
+  --accent-gold: #d97706;
+  --accent-gold-hover: #b45309;
+  --text-main: #e2e8f0;
+  --text-bright: #f8fafc;
+  --text-muted: #94a3b8;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Merriweather', 'Georgia', serif;
+}
+
+/* ── Theme Definitions ─────────────────────────────────────────────────────── */
+[data-theme="sepia"] {
+  --bg-dark: #f5ebd6;
+  --bg-card: #eae0ca;
+  --bg-paper: #f0e5cf;
+  --accent-gold: #c25e00;
+  --accent-gold-hover: #9c4a00;
+  --text-main: #2b261f;
+  --text-bright: #1c1813;
+  --text-muted: #786c5a;
+  --border-subtle: rgba(43, 38, 31, 0.12);
+}
+
+[data-theme="light"] {
+  --bg-dark: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-paper: #f1f5f9;
+  --accent-gold: #2563eb;
+  --accent-gold-hover: #1d4ed8;
+  --text-main: #1e293b;
+  --text-bright: #0f172a;
+  --text-muted: #64748b;
+  --border-subtle: rgba(15, 23, 42, 0.1);
+}
+
+[data-theme="forest"] {
+  --bg-dark: #0b1712;
+  --bg-card: #13261e;
+  --bg-paper: #193328;
+  --accent-gold: #10b981;
+  --accent-gold-hover: #059669;
+  --text-main: #d1fae5;
+  --text-bright: #ecfdf5;
+  --text-muted: #6ee7b7;
+  --border-subtle: rgba(209, 250, 229, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-dark);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Book Spine Card Hover Effects */
+.book-spine-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.book-spine-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Hide spine delete button by default, show on hover */
+.delete-spine-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.book-spine-card:hover .delete-spine-btn {
+  opacity: 1;
+}
+
+/* Tappable Words */
+.tappable-word:hover, .pdf-word-span:hover {
+  background-color: rgba(217, 119, 6, 0.25) !important;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.4) !important;
+  border-radius: 3px !important;
+  color: #fbbf24 !important;
+}
+
+/* OCR Word Hitbox Hover */
+.ocr-word-hitbox:hover {
+  background-color: rgba(217, 119, 6, 0.3) !important;
+}
+
+/* Nav Button Style */
+.nav-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--text-bright);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+}
+.nav-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Spinner Loader */
+.spinner-loader {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  border-top-color: var(--accent-gold);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
