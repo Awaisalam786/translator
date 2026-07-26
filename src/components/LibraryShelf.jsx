@@ -193,11 +193,13 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
           )}
 
           <button
-            onClick={() => {
+            onClick={async () => {
+              console.log('[SignOut] Sign Out button clicked in LibraryShelf header')
               if (window.confirm('Are you sure you want to sign out?')) {
                 if (onSignOut) {
-                  onSignOut()
+                  await onSignOut()
                 } else {
+                  console.log('[SignOut] Fallback reloading window...')
                   window.location.reload()
                 }
               }

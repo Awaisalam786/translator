@@ -204,8 +204,26 @@ export default function StudentAuthGate({ children }) {
   }
 
   // Handle Sign Out
-  const handleSignOut = () => {
-    supabase.auth.signOut()
+  const handleSignOut = async () => {
+    console.log('[SignOut] button clicked, initiating Supabase auth sign-out...')
+    setLoading(true)
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error('[SignOut] Error signing out from Supabase:', error.message)
+      } else {
+        console.log('[SignOut] supabase.auth.signOut() completed successfully')
+      }
+    } catch (err) {
+      console.error('[SignOut] Unexpected sign-out exception:', err)
+    } finally {
+      setSession(null)
+      setHasActiveAccess(false)
+      setCheckingAccess(false)
+      setLoading(false)
+      console.log('[SignOut] Auth state reset. Reloading app state...')
+      window.location.reload()
+    }
   }
 
   // ── 1. LOADING SCREEN ───────────────────────────────────────────────────────
