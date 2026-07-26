@@ -3,7 +3,7 @@ import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as Im
 import { getBooksMetadata, deleteBookComplete, getStorageStatus } from '../services/storageService'
 import { processBookUpload } from '../services/bookProcessor'
 
-export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPanel, onOpenTheme, savedWordsCount = 0 }) {
+export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPanel, onOpenTheme, onSignOut, savedWordsCount = 0 }) {
   const [books, setBooks] = useState([])
   const [storageInfo, setStorageInfo] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -195,12 +195,11 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
           <button
             onClick={() => {
               if (window.confirm('Are you sure you want to sign out?')) {
-                import('@supabase/supabase-js').then(() => {
-                  const url = import.meta.env.VITE_SUPABASE_URL || 'https://xyzcompany.supabase.co'
-                  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || 'dummy'
-                  const { createClient } = require('@supabase/supabase-js')
-                  createClient(url, key).auth.signOut().then(() => window.location.reload())
-                }).catch(() => window.location.reload())
+                if (onSignOut) {
+                  onSignOut()
+                } else {
+                  window.location.reload()
+                }
               }
             }}
             title="Sign Out"

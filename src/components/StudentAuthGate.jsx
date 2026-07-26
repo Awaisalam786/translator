@@ -570,7 +570,9 @@ export default function StudentAuthGate({ children }) {
           <span>Free Trial Active: {trialDaysLeft} {trialDaysLeft === 1 ? 'day' : 'days'} remaining</span>
         </div>
       )}
-      {children}
+      {React.isValidElement(children)
+        ? React.cloneElement(children, { onSignOut: handleSignOut })
+        : children}
     </div>
   )
 }
