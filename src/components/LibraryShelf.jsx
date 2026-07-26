@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as ImageIcon, Bookmark, Sparkles, Palette, LogOut } from 'lucide-react'
+import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as ImageIcon, Bookmark, Sparkles, Palette, LogOut, Star } from 'lucide-react'
 import { getBooksMetadata, deleteBookComplete, getStorageStatus } from '../services/storageService'
 import { processBookUpload } from '../services/bookProcessor'
 
