@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as ImageIcon, Bookmark, Sparkles, Palette, LogOut, Star } from 'lucide-react'
+import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as ImageIcon, Bookmark, Sparkles, Palette, LogOut, Star, User } from 'lucide-react'
 import { getBooksMetadata, deleteBookComplete, getStorageStatus } from '../services/storageService'
 import { processBookUpload } from '../services/bookProcessor'
+import ProfileModal from './ProfileModal'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ppyaxlytlrjtqdpbtjnk.supabase.co'
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_xfT7EODlWKoMGeJTt7GMHA_qNvN3el-'
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPanel, onOpenTheme, onSignOut, savedWordsCount = 0 }) {
+export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPanel, onOpenTheme, onSignOut, userProfile, onSaveName, savedWordsCount = 0 }) {
   const [books, setBooks] = useState([])
   const [storageInfo, setStorageInfo] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -16,6 +17,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
   const [progressPct, setProgressPct] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
 
   // Load books & storage estimate on mount
   useEffect(() => {
@@ -197,6 +199,28 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
             </button>
           )}
 
+          {/* Profile Settings Button */}
+          <button
+            onClick={() => setShowProfileModal(true)}
+            title="Profile Settings"
+            style={{
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '24px',
+              color: 'var(--text-bright)',
+              padding: '8px 14px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <User size={16} color="#38bdf8" />
+            <span>{userProfile?.full_name || 'Profile'}</span>
+          </button>
+
           <button
             onClick={async () => {
               console.log('[SignOut] Sign Out button clicked in LibraryShelf header!')
@@ -236,6 +260,15 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
           </button>
         </div>
       </header>
+
+      {/* Profile Settings Modal */}
+      {showProfileModal && (
+        <ProfileModal
+          userProfile={userProfile}
+          onSaveName={onSaveName}
+          onClose={() => setShowProfileModal(false)}
+        />
+      )}
 
       {/* ── Main Library Grid ─────────────────────────────────────────────────── */}
       <main style={{ maxWidth: '1140px', margin: '0 auto' }}>

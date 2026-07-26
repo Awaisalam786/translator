@@ -22,6 +22,7 @@ export default function StudentAuthGate({ children }) {
   const [trialDaysLeft, setTrialDaysLeft] = useState(3)
   const [hasActiveAccess, setHasActiveAccess] = useState(false)
   const [checkingAccess, setCheckingAccess] = useState(true)
+  const [userProfile, setUserProfile] = useState(null)
 
   // Payment Proof Form
   const [phone, setPhone] = useState('')
@@ -31,6 +32,26 @@ export default function StudentAuthGate({ children }) {
   const [paymentSubmitted, setPaymentSubmitted] = useState(false)
 
   const paymentSettings = getPaymentSettings()
+
+  // Save Full Name to public.profiles
+  const handleSaveName = async (newName) => {
+    if (!session?.user) return false
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name: newName })
+        .eq('id', session.user.id)
+
+      if (!error) {
+        setUserProfile(prev => ({ ...prev, full_name: newName }))
+        return true
+      }
+      console.error('[AuthGate] Error updating full_name:', error)
+    } catch (e) {
+      console.error('[AuthGate] handleSaveName exception:', e)
+    }
+    return false
+  }
 
   useEffect(() => {
     // Check initial auth session
@@ -51,6 +72,7 @@ export default function StudentAuthGate({ children }) {
         verifyUserTrialAndAccess(session.user)
       } else {
         setHasActiveAccess(false)
+        setUserProfile(null)
         setLoading(false)
         setCheckingAccess(false)
       }
@@ -64,12 +86,16 @@ export default function StudentAuthGate({ children }) {
     setCheckingAccess(true)
     console.log('[AuthGate] Verifying trial & access for User ID:', user.id, 'Email:', user.email)
     try {
-      // 1. Fetch Profile for trial_started_at
+      // 1. Fetch Profile for trial_started_at & full_name
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single()
+
+      if (profile) {
+        setUserProfile(profile)
+      }
 
       const trialStart = profile?.trial_started_at ? new Date(profile.trial_started_at) : new Date()
       const now = new Date()
@@ -606,7 +632,7 @@ export default function StudentAuthGate({ children }) {
         </div>
       )}
       {React.isValidElement(children)
-        ? React.cloneElement(children, { onSignOut: handleSignOut })
+        ? React.cloneElement(children, { onSignOut: handleSignOut, userProfile, onSaveName: handleSaveName })
         : children}
     </div>
   )
