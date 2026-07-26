@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as ImageIcon, Bookmark, Sparkles, Palette, LogOut, Star } from 'lucide-react'
 import { getBooksMetadata, deleteBookComplete, getStorageStatus } from '../services/storageService'
 import { processBookUpload } from '../services/bookProcessor'
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ppyaxlytlrjtqdpbtjnk.supabase.co'
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_xfT7EODlWKoMGeJTt7GMHA_qNvN3el-'
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPanel, onOpenTheme, onSignOut, savedWordsCount = 0 }) {
   const [books, setBooks] = useState([])
@@ -194,13 +199,20 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
 
           <button
             onClick={async () => {
-              console.log('[SignOut] Sign Out button clicked in LibraryShelf header')
+              console.log('[SignOut] Sign Out button clicked in LibraryShelf header!')
               if (window.confirm('Are you sure you want to sign out?')) {
-                if (onSignOut) {
-                  await onSignOut()
-                } else {
-                  console.log('[SignOut] Fallback reloading window...')
-                  window.location.reload()
+                try {
+                  console.log('[SignOut] Executing supabase.auth.signOut()...')
+                  await supabase.auth.signOut()
+                  console.log('[SignOut] Signed out from Supabase successfully!')
+                } catch (e) {
+                  console.error('[SignOut] Error during sign out:', e)
+                } finally {
+                  if (onSignOut) {
+                    await onSignOut()
+                  } else {
+                    window.location.reload()
+                  }
                 }
               }
             }}
