@@ -13,7 +13,7 @@ import {
   fetchSupabaseLicenses, generateSupabaseLicense,
   fetchSupabasePayments, approveSupabasePayment,
   fetchSupabaseAnnouncements, publishSupabaseAnnouncement,
-  fetchSupabaseProfiles,
+  fetchSupabaseProfiles, deleteUserAccount,
   getSupabaseCredentials, configureSupabase,
   supabaseAdminLogin, supabaseAdminLogout, getSupabaseUser
 } from './services/supabaseService'
@@ -268,6 +268,19 @@ export default function App() {
     )
   }
 
+  const handleDeleteUser = async (userId, userEmail) => {
+    if (window.confirm(`Are you sure you want to delete user ${userEmail}? This cannot be undone.`)) {
+      setLoading(true)
+      const res = await deleteUserAccount(userId)
+      if (res.success) {
+        setUsersList(prev => prev.filter(u => u.id !== userId))
+      } else {
+        alert(res.error || 'Failed to delete user.')
+      }
+      setLoading(false)
+    }
+  }
+
   const pendingCount = payments.filter(p => p.status === 'Pending').length
   const totalRevenue = payments.filter(p => p.status === 'Approved').reduce((acc, p) => acc + (p.amount || 500), 0)
   const filteredUsers = usersList.filter(u => u.email.toLowerCase().includes(userSearch.toLowerCase()))
@@ -512,8 +525,9 @@ export default function App() {
                       <td style={{ padding: '12px', color: '#10b981' }}>{u.status}</td>
                       <td style={{ padding: '12px', textAlign: 'right' }}>
                         <button
+                          onClick={() => handleDeleteUser(u.id, u.email)}
                           style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
-                          title="Block/Delete User"
+                          title="Delete User Account"
                         >
                           <Trash2 size={16} />
                         </button>

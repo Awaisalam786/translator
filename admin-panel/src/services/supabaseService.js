@@ -55,6 +55,26 @@ export async function getSupabaseUser() {
   }
 }
 
+// ── Delete User via Secure Supabase Edge Function ──────────────────────────────
+export async function deleteUserAccount(userId) {
+  try {
+    const { data, error } = await supabase.functions.invoke('delete-user', {
+      body: { userId }
+    })
+
+    if (error) return { success: false, error: error.message }
+    if (data?.error) return { success: false, error: data.error }
+    return { success: true }
+  } catch (e) {
+    // Direct profile deletion fallback
+    try {
+      const { error: profError } = await supabase.from('profiles').delete().eq('id', userId)
+      if (!profError) return { success: true }
+    } catch {}
+    return { success: false, error: e.message }
+  }
+}
+
 // ── Fetch Registered User Profiles Live from Supabase ────────────────────────
 export async function fetchSupabaseProfiles() {
   try {
