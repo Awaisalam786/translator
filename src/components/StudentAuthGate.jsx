@@ -62,6 +62,7 @@ export default function StudentAuthGate({ children }) {
   // Verify 3-Day Trial & License Status
   const verifyUserTrialAndAccess = async (user) => {
     setCheckingAccess(true)
+    console.log('[AuthGate] Verifying trial & access for User ID:', user.id, 'Email:', user.email)
     try {
       // 1. Fetch Profile for trial_started_at
       const { data: profile } = await supabase
@@ -77,20 +78,36 @@ export default function StudentAuthGate({ children }) {
 
       const remaining = Math.max(0, Math.ceil(3 - diffDays))
       setTrialDaysLeft(remaining)
+      console.log('[AuthGate] Trial Started At:', profile?.trial_started_at, '| Days Elapsed:', diffDays.toFixed(2), '| Remaining:', remaining)
 
-      // 2. Check for active license
-      const { data: userLicenses } = await supabase
+      // 2. Check for active license linked to this user_id
+      const { data: userLicenses, error: licErr } = await supabase
         .from('licenses')
         .select('*')
         .eq('user_id', user.id)
         .eq('status', 'Active')
 
-      const hasLicense = userLicenses && userLicenses.length > 0
+      if (licErr) {
+        console.error('[AuthGate] License query error:', licErr)
+      }
+
+      console.log('[AuthGate] Licenses found for user_id:', userLicenses)
+
+      // Filter valid non-expired licenses
+      const validLicense = userLicenses?.find(lic => {
+        if (!lic.expires_at) return true
+        return new Date(lic.expires_at) > now
+      })
+
+      const hasLicense = Boolean(validLicense)
+      console.log('[AuthGate] Has Valid Active License?:', hasLicense, '| Valid License Object:', validLicense)
 
       // Access granted if within 3-day trial OR has active license
       if (diffDays <= 3 || hasLicense) {
+        console.log('[AuthGate] ✅ ACCESS GRANTED!')
         setHasActiveAccess(true)
       } else {
+        console.warn('[AuthGate] ❌ ACCESS BLOCKED (Trial Expired & No Active License found for user_id)')
         setHasActiveAccess(false)
       }
     } catch (e) {

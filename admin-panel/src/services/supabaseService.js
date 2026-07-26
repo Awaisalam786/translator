@@ -146,7 +146,8 @@ export async function fetchSupabaseLicenses() {
         key: d.key,
         type: d.type,
         createdAt: d.created_at ? new Date(d.created_at).toLocaleDateString() : 'N/A',
-        status: d.status
+        status: d.status,
+        user_id: d.user_id
       }))
     }
   } catch (e) {
@@ -155,15 +156,22 @@ export async function fetchSupabaseLicenses() {
   return []
 }
 
-export async function generateSupabaseLicense(type = '1 Month') {
+export async function generateSupabaseLicense(type = '1 Month', userId = null) {
   const part1 = Math.random().toString(36).substring(2, 6).toUpperCase()
   const part2 = Math.random().toString(36).substring(2, 6).toUpperCase()
   const key = `LESE-${part1}-${part2}`
 
+  const expiresAt = new Date()
+  if (type === '6 Months') expiresAt.setMonth(expiresAt.getMonth() + 6)
+  else if (type === 'Lifetime') expiresAt.setFullYear(expiresAt.getFullYear() + 50)
+  else expiresAt.setMonth(expiresAt.getMonth() + 1)
+
   const payload = {
     key,
+    user_id: userId,
     type,
     created_at: new Date().toISOString(),
+    expires_at: expiresAt.toISOString(),
     status: 'Active'
   }
 
@@ -172,6 +180,7 @@ export async function generateSupabaseLicense(type = '1 Month') {
     if (data && !error) {
       return {
         key: data.key,
+        user_id: data.user_id,
         type: data.type,
         createdAt: data.created_at ? new Date(data.created_at).toLocaleDateString() : 'N/A',
         status: data.status
@@ -191,6 +200,7 @@ export async function fetchSupabasePayments() {
     if (data && !error) {
       return data.map(p => ({
         id: p.id,
+        user_id: p.user_id,
         phone: p.phone,
         trxId: p.trx_id,
         provider: p.provider,
@@ -212,8 +222,31 @@ export async function approveSupabasePayment(paymentId) {
   const key = `LESE-${part1}-${part2}`
 
   try {
+    // 1. Fetch payment to obtain the student's user_id
+    const { data: payment } = await supabase
+      .from('payments')
+      .select('user_id')
+      .eq('id', paymentId)
+      .single()
+
+    const userId = payment?.user_id || null
+
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 30) // 30 Days Access
+
+    // 2. Update payment status to Approved
     await supabase.from('payments').update({ status: 'Approved', generated_key: key }).eq('id', paymentId)
-    await supabase.from('licenses').insert([{ key, type: '1 Month', created_at: new Date().toISOString(), status: 'Active' }])
+
+    // 3. Insert license LINKED TO user_id
+    await supabase.from('licenses').insert([{
+      key,
+      user_id: userId,
+      type: '1 Month',
+      status: 'Active',
+      created_at: new Date().toISOString(),
+      expires_at: expiresAt.toISOString()
+    }])
+
     return { success: true, key }
   } catch (e) {
     console.error('[Supabase] approvePayment error:', e)
