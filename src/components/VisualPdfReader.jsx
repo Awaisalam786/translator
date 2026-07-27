@@ -167,7 +167,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
         logMobileDebug(`[VisualPdfReader] Crisp Retina Canvas rendered: Page ${currentPage} [Scale: ${effectiveScale.toFixed(2)}x, DPR: ${dpr}x, Resolution: ${canvas.width}x${canvas.height}px]`)
 
-        // Build word-level token hit map in CSS Display Logical Pixels (100% accurate 1:1 overlay & tap matching)
+        // Build word-level token hit map in CSS Display Logical Pixels with exact character offset measurement
         const content = await page.getTextContent()
         if (cancelled) return
 
@@ -182,7 +182,31 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           const lineH = Math.ceil(fh * 1.25)
           const fullStr = it.str
           const totalW = Math.ceil(it.width * effectiveScale)
-          const charWidth = fullStr.length ? (totalW / fullStr.length) : 8
+
+          // Measure character width accounting for space/tab gaps across table columns
+          const spaceWidth = Math.max(3, Math.round(fh * 0.38))
+          let nonSpaceCount = 0
+          let spaceCount = 0
+          for (let i = 0; i < fullStr.length; i++) {
+            if (fullStr[i] === ' ' || fullStr[i] === '\t') spaceCount++
+            else nonSpaceCount++
+          }
+
+          const totalSpaceW = spaceCount * spaceWidth
+          const nonSpaceTotalW = Math.max(0, totalW - totalSpaceW)
+          const charWidth = nonSpaceCount > 0 ? (nonSpaceTotalW / nonSpaceCount) : spaceWidth
+
+          // Precompute exact cumulative X offset for each character position
+          const charXOffsets = new Array(fullStr.length)
+          let curX = 0
+          for (let i = 0; i < fullStr.length; i++) {
+            charXOffsets[i] = curX
+            if (fullStr[i] === ' ' || fullStr[i] === '\t') {
+              curX += spaceWidth
+            } else {
+              curX += charWidth
+            }
+          }
 
           // Extract individual words with exact word-level bounding boxes in CSS pixels
           const regex = /[\wäöüßÄÖÜéàèâêîôûùçœ'-]+/gi
@@ -194,8 +218,9 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
             if (!cleanWord || cleanWord.length < 2) continue
 
             const startIndex = match.index
-            const wordW = Math.max(12, Math.ceil(rawWord.length * charWidth))
-            const wordX = Math.floor(lineX + (startIndex * charWidth))
+            const lastIndex = match.index + rawWord.length - 1
+            const wordX = Math.floor(lineX + charXOffsets[startIndex])
+            const wordW = Math.max(12, Math.ceil((charXOffsets[lastIndex] + charWidth) - charXOffsets[startIndex]))
 
             tokens.push({
               word: cleanWord,
@@ -258,40 +283,87 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     const domX = clientX - rect.left
     const domY = clientY - rect.top
 
-    let exactMatch = null
-    let closestMatch = null
-    let minDistance = 35 // 35px CSS search radius
-
+    // Pass 1: Strict Bounding Box Containment (Check exact box hit first!)
+    let strictMatch = null
     for (const token of textItems) {
-      const padY = 5
-      const padX = 5
+      const padX = 4
+      const padY = 4
       if (domX >= (token.x - padX) && domX <= (token.x + token.w + padX) &&
           domY >= (token.y - padY) && domY <= (token.y + token.h + padY)) {
-        exactMatch = token
+        strictMatch = token
         break
-      }
-
-      const dist = Math.hypot(domX - token.cx, domY - token.cy)
-      if (dist < minDistance) {
-        minDistance = dist
-        closestMatch = token
       }
     }
 
-    const selectedToken = exactMatch || closestMatch
-
-    if (selectedToken) {
-      logMobileDebug(`[VisualPdfReader] ✅ Word matched: "${selectedToken.word}" (CSS W: ${selectedToken.w}px, H: ${selectedToken.h}px)`)
-      setSelectedWordToken(selectedToken)
+    if (strictMatch) {
+      logMobileDebug(`[VisualPdfReader] ✅ Strict Bounding Box Hit: "${strictMatch.word}" (x:${strictMatch.x}, y:${strictMatch.y}, w:${strictMatch.w})`)
+      setSelectedWordToken(strictMatch)
       const clickRect = {
-        left: rect.left + selectedToken.x,
-        top: rect.top + selectedToken.y,
-        bottom: rect.top + selectedToken.y + selectedToken.h,
-        right: rect.left + selectedToken.x + selectedToken.w,
-        width: selectedToken.w,
-        height: selectedToken.h
+        left: rect.left + strictMatch.x,
+        top: rect.top + strictMatch.y,
+        bottom: rect.top + strictMatch.y + strictMatch.h,
+        right: rect.left + strictMatch.x + strictMatch.w,
+        width: strictMatch.w,
+        height: strictMatch.h
       }
-      onSelectWord(selectedToken.word, clickRect)
+      onSelectWord(strictMatch.word, clickRect)
+      return
+    }
+
+    // Pass 2: Same-Row Nearby Search (Restricted strictly to the SAME line, prevents cross-row/column jumping in tables!)
+    let sameRowMatch = null
+    let minRowXDist = 30 // Max 30px horizontal search on the SAME line
+
+    for (const token of textItems) {
+      const inSameRow = (domY >= (token.y - 5) && domY <= (token.y + token.h + 5))
+      if (inSameRow) {
+        const xDist = Math.abs(domX - token.cx)
+        if (xDist < minRowXDist) {
+          minRowXDist = xDist
+          sameRowMatch = token
+        }
+      }
+    }
+
+    if (sameRowMatch) {
+      logMobileDebug(`[VisualPdfReader] ✅ Same-Row Word Hit: "${sameRowMatch.word}"`)
+      setSelectedWordToken(sameRowMatch)
+      const clickRect = {
+        left: rect.left + sameRowMatch.x,
+        top: rect.top + sameRowMatch.y,
+        bottom: rect.top + sameRowMatch.y + sameRowMatch.h,
+        right: rect.left + sameRowMatch.x + sameRowMatch.w,
+        width: sameRowMatch.w,
+        height: sameRowMatch.h
+      }
+      onSelectWord(sameRowMatch.word, clickRect)
+      return
+    }
+
+    // Pass 3: Tight 14px fallback radius if tap landed between line margins
+    let tightFallback = null
+    let minFallbackDist = 14
+
+    for (const token of textItems) {
+      const dist = Math.hypot(domX - token.cx, domY - token.cy)
+      if (dist < minFallbackDist) {
+        minFallbackDist = dist
+        tightFallback = token
+      }
+    }
+
+    if (tightFallback) {
+      logMobileDebug(`[VisualPdfReader] ✅ Fallback Word Hit: "${tightFallback.word}"`)
+      setSelectedWordToken(tightFallback)
+      const clickRect = {
+        left: rect.left + tightFallback.x,
+        top: rect.top + tightFallback.y,
+        bottom: rect.top + tightFallback.y + tightFallback.h,
+        right: rect.left + tightFallback.x + tightFallback.w,
+        width: tightFallback.w,
+        height: tightFallback.h
+      }
+      onSelectWord(tightFallback.word, clickRect)
     } else {
       logMobileDebug(`[VisualPdfReader] Tap at DOM (${Math.round(domX)}, ${Math.round(domY)}) did not match any nearby word token.`)
     }
