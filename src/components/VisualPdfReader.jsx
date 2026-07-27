@@ -189,19 +189,19 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         // Multi-Strategy Text Extraction Pipeline (Parses Form XObjects, Marked Content & Mixed Image/Text Streams)
         let content = null
 
-        // Strategy 1: Standard recursive stream extraction (parses Form XObjects & mixed layouts)
+        // Strategy 1: Uncombined text extraction (gives exact individual X & Y coordinates for EVERY word in complex layouts)
         try {
-          content = await page.getTextContent()
-          logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 1: ${content?.items?.length || 0} raw text items`)
+          content = await page.getTextContent({ disableCombineTextItems: true })
+          logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 1 (Uncombined): ${content?.items?.length || 0} raw text items`)
         } catch (e1) {
           logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} Strategy 1 error: ${e1.message}`)
         }
 
-        // Strategy 2: Uncombined text items fallback
+        // Strategy 2: Standard combined text extraction fallback
         if (!content || !content.items || content.items.length === 0) {
           try {
-            content = await page.getTextContent({ disableCombineTextItems: true })
-            logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 2: ${content?.items?.length || 0} items extracted`)
+            content = await page.getTextContent()
+            logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 2 (Standard): ${content?.items?.length || 0} items extracted`)
           } catch (e2) {
             logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} Strategy 2 error: ${e2.message}`)
           }
@@ -213,7 +213,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           if (cancelled) return
           try {
             content = await page.getTextContent({ includeMarkedContent: true })
-            logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 3: ${content?.items?.length || 0} items extracted`)
+            logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 3 (Marked): ${content?.items?.length || 0} items extracted`)
           } catch (e3) {
             logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} Strategy 3 error: ${e3.message}`)
           }
@@ -286,17 +286,27 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           }
         }
 
-        // Strategy 4: Client-Side Instant OCR Fallback on Rendered Canvas for Image/Vector Pages
-        if (tokens.length === 0 && canvas) {
-          logMobileDebug(`⚠️ [VisualPdfReader] 0 PDF.str tokens extracted on Page ${currentPage}. Initiating Client-Side OCR Fallback on rendered canvas...`)
+        // Strategy 4: Instant Canvas OCR Fallback for 0-token or low-token pages (< 10 words)
+        if (tokens.length < 10 && canvas) {
+          logMobileDebug(`⚠️ [VisualPdfReader] Only ${tokens.length} PDF.str tokens found on Page ${currentPage}. Initiating Canvas Tesseract OCR Fallback...`)
           try {
             const { createWorker } = await import('tesseract.js')
-            const imageDataUrl = canvas.toDataURL('image/jpeg', 0.85)
-            const worker = await createWorker('deu+eng')
-            const ret = await worker.recognize(imageDataUrl)
+            let worker = null
+            try {
+              worker = await createWorker('deu')
+            } catch {
+              try {
+                worker = await createWorker('eng')
+              } catch {
+                worker = await createWorker()
+              }
+            }
+
+            const ret = await worker.recognize(canvas)
             await worker.terminate()
 
             if (ret?.data?.words) {
+              let ocrAddedCount = 0
               for (const w of ret.data.words) {
                 const rawText = w.text ? w.text.trim() : ''
                 const clean = rawText.replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '').trim()
@@ -317,11 +327,12 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
                   cx: wordX + wordW / 2,
                   cy: wordY + wordH / 2
                 })
+                ocrAddedCount++
               }
-              logMobileDebug(`[VisualPdfReader] ✅ Instant OCR Fallback extracted ${tokens.length} tokens for Page ${currentPage}!`)
+              logMobileDebug(`[VisualPdfReader] ✅ Canvas OCR Fallback completed: Extracted ${ocrAddedCount} word tokens for Page ${currentPage}!`)
             }
           } catch (ocrErr) {
-            logMobileDebug(`❌ [VisualPdfReader] Client-Side OCR Fallback error on Page ${currentPage}: ${ocrErr.message}`)
+            logMobileDebug(`❌ [VisualPdfReader] Canvas OCR Fallback error on Page ${currentPage}: ${ocrErr.message}`)
           }
         }
 
