@@ -111,6 +111,8 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
   const renderTaskRef = useRef(null)
 
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+
   // ── Render PDF Page to Canvas ─────────────────────────────────────────────
   useEffect(() => {
     if (!pdfDoc || effectiveScale <= 0) return
@@ -123,7 +125,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         if (cancelled) return
 
         // Account for high-DPI Retina mobile screens (devicePixelRatio)
-        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5)) // Cap at 2.5x to balance crispness vs mobile memory
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5))
         const renderScale = effectiveScale * dpr
 
         const viewport = page.getViewport({ scale: renderScale })
@@ -139,6 +141,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         const cssHeight = Math.floor(viewport.height / dpr)
         canvas.style.width = `${cssWidth}px`
         canvas.style.height = `${cssHeight}px`
+        setContainerSize({ w: cssWidth, h: cssHeight })
 
         const ctx = canvas.getContext('2d')
         ctx.fillStyle = '#ffffff'
@@ -320,11 +323,12 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     const domX = clientX - rect.left
     const domY = clientY - rect.top
 
-    // Pass 1: Strict Bounding Box Containment (Check exact box hit first!)
+    // Strict Bounding Box Containment with tight 4px tolerance (no broad radial matching)
     let strictMatch = null
+    const padX = 4
+    const padY = 4
+
     for (const token of textItems) {
-      const padX = 4
-      const padY = 4
       if (domX >= (token.x - padX) && domX <= (token.x + token.w + padX) &&
           domY >= (token.y - padY) && domY <= (token.y + token.h + padY)) {
         strictMatch = token
@@ -333,7 +337,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     }
 
     if (strictMatch) {
-      logMobileDebug(`[VisualPdfReader] ✅ Strict Bounding Box Hit: "${strictMatch.word}" (x:${strictMatch.x}, y:${strictMatch.y}, w:${strictMatch.w})`)
+      logMobileDebug(`[VisualPdfReader] ✅ Exact Word Hit: "${strictMatch.word}" (x:${strictMatch.x}, y:${strictMatch.y}, w:${strictMatch.w})`)
       setSelectedWordToken(strictMatch)
       const clickRect = {
         left: rect.left + strictMatch.x,
@@ -344,65 +348,8 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         height: strictMatch.h
       }
       onSelectWord(strictMatch.word, clickRect)
-      return
-    }
-
-    // Pass 2: Same-Row Nearby Search (Restricted strictly to the SAME line, prevents cross-row/column jumping in tables!)
-    let sameRowMatch = null
-    let minRowXDist = 30 // Max 30px horizontal search on the SAME line
-
-    for (const token of textItems) {
-      const inSameRow = (domY >= (token.y - 5) && domY <= (token.y + token.h + 5))
-      if (inSameRow) {
-        const xDist = Math.abs(domX - token.cx)
-        if (xDist < minRowXDist) {
-          minRowXDist = xDist
-          sameRowMatch = token
-        }
-      }
-    }
-
-    if (sameRowMatch) {
-      logMobileDebug(`[VisualPdfReader] ✅ Same-Row Word Hit: "${sameRowMatch.word}"`)
-      setSelectedWordToken(sameRowMatch)
-      const clickRect = {
-        left: rect.left + sameRowMatch.x,
-        top: rect.top + sameRowMatch.y,
-        bottom: rect.top + sameRowMatch.y + sameRowMatch.h,
-        right: rect.left + sameRowMatch.x + sameRowMatch.w,
-        width: sameRowMatch.w,
-        height: sameRowMatch.h
-      }
-      onSelectWord(sameRowMatch.word, clickRect)
-      return
-    }
-
-    // Pass 3: Tight 14px fallback radius if tap landed between line margins
-    let tightFallback = null
-    let minFallbackDist = 14
-
-    for (const token of textItems) {
-      const dist = Math.hypot(domX - token.cx, domY - token.cy)
-      if (dist < minFallbackDist) {
-        minFallbackDist = dist
-        tightFallback = token
-      }
-    }
-
-    if (tightFallback) {
-      logMobileDebug(`[VisualPdfReader] ✅ Fallback Word Hit: "${tightFallback.word}"`)
-      setSelectedWordToken(tightFallback)
-      const clickRect = {
-        left: rect.left + tightFallback.x,
-        top: rect.top + tightFallback.y,
-        bottom: rect.top + tightFallback.y + tightFallback.h,
-        right: rect.left + tightFallback.x + tightFallback.w,
-        width: tightFallback.w,
-        height: tightFallback.h
-      }
-      onSelectWord(tightFallback.word, clickRect)
     } else {
-      logMobileDebug(`[VisualPdfReader] Tap at DOM (${Math.round(domX)}, ${Math.round(domY)}) did not match any nearby word token.`)
+      logMobileDebug(`[VisualPdfReader] Tap at (${Math.round(domX)}, ${Math.round(domY)}) missed all word bounding boxes.`)
     }
   }, [textItems, currentPage, onSelectWord])
 
@@ -541,17 +488,18 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
             onClick={handleClick}
             style={{
               position: 'relative',
+              width: containerSize.w > 0 ? `${containerSize.w}px` : 'auto',
+              height: containerSize.h > 0 ? `${containerSize.h}px` : 'auto',
               cursor: 'pointer',
               boxShadow: '0 12px 40px rgba(0,0,0,0.7)',
               borderRadius: '6px',
               overflow: 'hidden',
               opacity: pageLoading ? 0.6 : 1,
               transition: 'opacity 0.15s ease',
-              maxWidth: '100%',
               margin: '0 auto'
             }}
           >
-          <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
+          <canvas ref={canvasRef} style={{ display: 'block', width: containerSize.w > 0 ? `${containerSize.w}px` : 'auto', height: containerSize.h > 0 ? `${containerSize.h}px` : 'auto' }} />
 
           {/* Interactive Pixel-Perfect Text Layer Overlay */}
           {!pageLoading && textItems.length > 0 && (
