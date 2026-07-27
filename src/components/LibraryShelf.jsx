@@ -146,7 +146,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
               color: 'var(--text-muted)',
               margin: 0
             }}>
-              Foreign Language Reader with Tap-to-Translate
+              {userProfile?.full_name ? `Hi, ${userProfile.full_name} — Foreign Language Reader` : (userProfile?.email ? `Hi, ${userProfile.email} — Foreign Language Reader` : 'Foreign Language Reader with Tap-to-Translate')}
             </p>
           </div>
         </div>

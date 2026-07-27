@@ -1,12 +1,44 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import { User, X, Check, Save, Phone } from 'lucide-react'
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ppyaxlytlrjtqdpbtjnk.supabase.co'
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_xfT7EODlWKoMGeJTt7GMHA_qNvN3el-'
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 export default function ProfileModal({ userProfile, onSaveProfile, onClose }) {
   const [fullName, setFullName] = useState(userProfile?.full_name || '')
   const [phoneNumber, setPhoneNumber] = useState(userProfile?.phone_number || '')
+  const [userEmail, setUserEmail] = useState(userProfile?.email || '')
   const [saving, setSaving] = useState(false)
   const [savedSuccess, setSavedSuccess] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+
+  // Fetch live profile row from public.profiles on mount
+  useEffect(() => {
+    async function loadLatestProfile() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          setUserEmail(user.email || '')
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single()
+
+          if (prof) {
+            console.log('[ProfileModal] Live profile loaded for user_id:', user.id, '| full_name:', prof.full_name, '| phone_number:', prof.phone_number)
+            if (prof.full_name !== undefined && prof.full_name !== null) setFullName(prof.full_name)
+            if (prof.phone_number !== undefined && prof.phone_number !== null) setPhoneNumber(prof.phone_number)
+          }
+        }
+      } catch (e) {
+        console.warn('[ProfileModal] Error fetching live profile:', e)
+      }
+    }
+    loadLatestProfile()
+  }, [])
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -98,7 +130,7 @@ export default function ProfileModal({ userProfile, onSaveProfile, onClose }) {
             Profile Settings
           </h2>
           <p style={{ fontSize: '0.82rem', color: '#94a3b8', margin: 0 }}>
-            {userProfile?.email || 'Logged in student'}
+            {userEmail || userProfile?.email || 'Logged in student'}
           </p>
         </div>
 
