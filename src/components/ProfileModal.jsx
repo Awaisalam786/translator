@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { User, X, Check, Save } from 'lucide-react'
+import { User, X, Check, Save, Phone } from 'lucide-react'
 
-export default function ProfileModal({ userProfile, onSaveName, onClose }) {
+export default function ProfileModal({ userProfile, onSaveProfile, onClose }) {
   const [fullName, setFullName] = useState(userProfile?.full_name || '')
+  const [phoneNumber, setPhoneNumber] = useState(userProfile?.phone_number || '')
   const [saving, setSaving] = useState(false)
   const [savedSuccess, setSavedSuccess] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -14,7 +15,10 @@ export default function ProfileModal({ userProfile, onSaveName, onClose }) {
     setSavedSuccess(false)
 
     try {
-      const ok = await onSaveName(fullName.trim())
+      const ok = await onSaveProfile({
+        full_name: fullName.trim(),
+        phone_number: phoneNumber.trim()
+      })
       if (ok) {
         setSavedSuccess(true)
         setTimeout(() => {
@@ -44,7 +48,7 @@ export default function ProfileModal({ userProfile, onSaveName, onClose }) {
     }}>
       <div style={{
         width: '100%',
-        maxWidth: '400px',
+        maxWidth: '420px',
         backgroundColor: '#1a1d2e',
         border: '1px solid rgba(255, 255, 255, 0.12)',
         borderRadius: '20px',
@@ -102,14 +106,37 @@ export default function ProfileModal({ userProfile, onSaveName, onClose }) {
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
-              Your Display Name
+              Full Name *
             </label>
             <input
               type="text"
               required
-              placeholder="e.g. Awais Alam"
+              placeholder="e.g. Ahmed Khan"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '10px',
+                backgroundColor: '#12151e',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: '#fff',
+                fontSize: '0.92rem',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+              Mobile Number (Optional)
+            </label>
+            <input
+              type="text"
+              placeholder="0300-1234567"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
               style={{
                 width: '100%',
                 padding: '12px',

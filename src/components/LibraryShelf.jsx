@@ -9,7 +9,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ppyaxlytlrjtq
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_xfT7EODlWKoMGeJTt7GMHA_qNvN3el-'
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPanel, onOpenTheme, onSignOut, userProfile, onSaveName, savedWordsCount = 0 }) {
+export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPanel, onOpenTheme, onSignOut, userProfile, onSaveProfile, onSaveName, savedWordsCount = 0 }) {
   const [books, setBooks] = useState([])
   const [storageInfo, setStorageInfo] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -218,7 +218,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
             }}
           >
             <User size={16} color="#38bdf8" />
-            <span>{userProfile?.full_name || 'Profile'}</span>
+            <span>{userProfile?.full_name ? `Hi, ${userProfile.full_name.split(' ')[0]}` : (userProfile?.email ? `Hi, ${userProfile.email.split('@')[0]}` : 'Profile')}</span>
           </button>
 
           <button
@@ -265,7 +265,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
       {showProfileModal && (
         <ProfileModal
           userProfile={userProfile}
-          onSaveName={onSaveName}
+          onSaveProfile={onSaveProfile || onSaveName}
           onClose={() => setShowProfileModal(false)}
         />
       )}

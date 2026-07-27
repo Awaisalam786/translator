@@ -15,6 +15,8 @@ export default function StudentAuthGate({ children }) {
   // Form Inputs
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [signupFullName, setSignupFullName] = useState('')
+  const [signupPhone, setSignupPhone] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
@@ -32,6 +34,27 @@ export default function StudentAuthGate({ children }) {
   const [paymentSubmitted, setPaymentSubmitted] = useState(false)
 
   const paymentSettings = getPaymentSettings()
+
+  // Save Profile (Full Name & Phone Number) to public.profiles
+  const handleSaveProfile = async ({ full_name, phone_number }) => {
+    if (!session?.user) return false
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name, phone_number })
+        .eq('id', session.user.id)
+
+      if (!error) {
+        console.log('[Profile] Saved full_name and phone_number for user_id:', session.user.id)
+        setUserProfile(prev => ({ ...prev, full_name, phone_number }))
+        return true
+      }
+      console.error('[AuthGate] Error updating profile:', error)
+    } catch (e) {
+      console.error('[AuthGate] handleSaveProfile exception:', e)
+    }
+    return false
+  }
 
   // Save Full Name to public.profiles
   const handleSaveName = async (newName) => {
@@ -166,11 +189,35 @@ export default function StudentAuthGate({ children }) {
     setSuccessMsg('')
     setLoading(true)
 
-    const { data, error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: signupFullName.trim(),
+          phone_number: signupPhone.trim()
+        }
+      }
+    })
+
     if (error) {
       setErrorMsg(error.message)
       setLoading(false)
     } else {
+      if (data?.user) {
+        console.log('[Signup] Saved full_name and phone_number for user_id:', data.user.id, '| Full Name:', signupFullName.trim(), '| Phone:', signupPhone.trim())
+        try {
+          await supabase.from('profiles').upsert([{
+            id: data.user.id,
+            email: data.user.email,
+            full_name: signupFullName.trim(),
+            phone_number: signupPhone.trim(),
+            trial_started_at: new Date().toISOString()
+          }])
+        } catch (err) {
+          console.warn('[Signup] Profile upsert warning:', err)
+        }
+      }
       setSuccessMsg('Account created successfully! Enjoy your 3-Day Free Trial.')
       setLoading(false)
     }
@@ -430,7 +477,30 @@ export default function StudentAuthGate({ children }) {
           {authMode === 'signup' && (
             <form onSubmit={handleSignUp} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Email Address</label>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Ahmed Khan"
+                  value={signupFullName}
+                  onChange={(e) => setSignupFullName(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Mobile Number (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="0300-1234567"
+                  value={signupPhone}
+                  onChange={(e) => setSignupPhone(e.target.value)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Email Address *</label>
                 <input
                   type="email"
                   required
@@ -442,7 +512,7 @@ export default function StudentAuthGate({ children }) {
               </div>
 
               <div>
-                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Password (min 6 chars)</label>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Password (min 6 chars) *</label>
                 <input
                   type="password"
                   required
@@ -632,7 +702,7 @@ export default function StudentAuthGate({ children }) {
         </div>
       )}
       {React.isValidElement(children)
-        ? React.cloneElement(children, { onSignOut: handleSignOut, userProfile, onSaveName: handleSaveName })
+        ? React.cloneElement(children, { onSignOut: handleSignOut, userProfile, onSaveProfile: handleSaveProfile, onSaveName: handleSaveName })
         : children}
     </div>
   )
