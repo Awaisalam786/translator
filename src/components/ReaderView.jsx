@@ -29,7 +29,7 @@ export default function ReaderView({
 
   // Handle word tap in text / OCR / PDF layer
   const handleWordTap = (word, context = '', rect = null, tokenKey = null, fontSize = '1.15rem') => {
-    const clean = word.replace(/^[^a-zA-Z\u00C0-\u024F\u1E00-\u1EFF]+|[^a-zA-Z\u00C0-\u024F\u1E00-\u1EFF]+$/g, '').trim()
+    const clean = (word || '').replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '').trim() || word
     if (clean && clean.length > 0) {
       setSelectedWord(clean)
       setSentenceContext(context)

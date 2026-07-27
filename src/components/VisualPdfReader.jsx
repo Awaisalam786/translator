@@ -180,7 +180,8 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           const lineX = Math.floor(tx[4] / dpr)
           const lineY = Math.floor((tx[5] - (fh * dpr * 0.85)) / dpr)
           const lineH = Math.ceil(fh * 1.25)
-          const fullStr = it.str
+          // Normalize string to NFC and replace soft hyphens / zero-width spaces with standard spaces
+          const fullStr = (it.str || '').normalize('NFC').replace(/[\u00AD\u200B\uFEFF\u200E\u200F\u00A0]/g, ' ')
           const totalW = Math.ceil(it.width * effectiveScale)
 
           // Measure character width accounting for space/tab gaps across table columns
@@ -208,19 +209,19 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
             }
           }
 
-          // Extract individual words with exact word-level bounding boxes in CSS pixels
-          const regex = /[\wäöüßÄÖÜéàèâêîôûùçœ'-]+/gi
+          // Extract individual words using Unicode property escape matching all international letters
+          const regex = /[\p{L}\p{M}\p{N}'-]+/gu
           let match
 
           while ((match = regex.exec(fullStr)) !== null) {
             const rawWord = match[0]
-            const cleanWord = rawWord.replace(/^[^a-zA-ZäöüßÄÖÜéàèâêîôûùçœ]+|[^a-zA-ZäöüßÄÖÜéàèâêîôûùçœ]+$/gi, '')
-            if (!cleanWord || cleanWord.length < 2) continue
+            const cleanWord = rawWord.replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '').trim()
+            if (!cleanWord || cleanWord.length < 1) continue
 
             const startIndex = match.index
             const lastIndex = match.index + rawWord.length - 1
             const wordX = Math.floor(lineX + charXOffsets[startIndex])
-            const wordW = Math.max(12, Math.ceil((charXOffsets[lastIndex] + charWidth) - charXOffsets[startIndex]))
+            const wordW = Math.max(10, Math.ceil((charXOffsets[lastIndex] + charWidth) - charXOffsets[startIndex]))
 
             tokens.push({
               word: cleanWord,
