@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { ZoomIn, ZoomOut, Loader2, Maximize2, Minimize2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { logMobileDebug } from './DebugOverlay'
 
 // Set up PDF.js worker CDN URL with fallback handling
 try {
@@ -127,6 +128,8 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         await page.render({ canvasContext: ctx, viewport }).promise
         if (cancelled) return
 
+        logMobileDebug(`[VisualPdfReader] Canvas rendered page ${currentPage} at scale ${effectiveScale.toFixed(2)}`)
+
         // Build word-level token hit map for 100% accurate tap-to-translate
         const content = await page.getTextContent()
         if (cancelled) return
@@ -169,11 +172,17 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           }
         }
 
+        logMobileDebug(`[VisualPdfReader] Page ${currentPage}: Extracted ${content.items.length} raw text items, built ${tokens.length} word tokens`)
+        if (tokens.length === 0) {
+          logMobileDebug(`⚠️ [VisualPdfReader] Notice: 0 word tokens extracted on page ${currentPage}. PDF might be a scanned image or non-standard font encoding.`)
+        }
+
         setTextItems(tokens)
         setPageLoading(false)
       } catch (e) {
         if (!cancelled) {
-          console.error('[PDF] render error:', e)
+          console.error('[VisualPdfReader] Render error:', e)
+          logMobileDebug(`❌ [VisualPdfReader] Render error: ${e.message}`)
           setPageLoading(false)
         }
       }
@@ -183,28 +192,32 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     return () => { cancelled = true }
   }, [pdfDoc, currentPage, effectiveScale])
 
-  // ── Word Tap Handler with Word-Level Bounding Box Matching ──────────────
-  const handleClick = useCallback((e) => {
+  // ── Mobile Touch & Click Tap-to-Translate Handler ──────────────────────────────
+  const handleTapOnPage = useCallback((clientX, clientY) => {
     const rect = canvasRef.current?.getBoundingClientRect()
-    if (!rect || !textItems.length) return
-    const mx = e.clientX - rect.left
-    const my = e.clientY - rect.top
+    if (!rect) return
+
+    if (!textItems.length) {
+      logMobileDebug(`⚠️ [VisualPdfReader] Tap ignored: 0 text tokens available on Page ${currentPage}`)
+      return
+    }
+
+    const mx = clientX - rect.left
+    const my = clientY - rect.top
 
     let exactMatch = null
     let closestMatch = null
-    let minDistance = 35 // 35px max search radius for nearest word center
+    let minDistance = 50 // 50px mobile touch search radius
 
     for (const token of textItems) {
-      // 1. Exact word box hit check with 5px padding
-      const padY = 6
-      const padX = 6
+      const padY = 8
+      const padX = 8
       if (mx >= (token.x - padX) && mx <= (token.x + token.w + padX) &&
           my >= (token.y - padY) && my <= (token.y + token.h + padY)) {
         exactMatch = token
         break
       }
 
-      // 2. Nearest word center check
       const dist = Math.hypot(mx - token.cx, my - token.cy)
       if (dist < minDistance) {
         minDistance = dist
@@ -215,18 +228,24 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     const selectedToken = exactMatch || closestMatch
 
     if (selectedToken) {
-      // Build screen-relative rect anchored precisely at user tap location
+      logMobileDebug(`[VisualPdfReader] ✅ Word tapped: "${selectedToken.word}"`)
       const clickRect = {
-        left: Math.max(12, e.clientX - 20),
-        top: e.clientY - 10,
-        bottom: e.clientY + 14,
-        right: e.clientX + 20,
-        width: 40,
-        height: 24
+        left: Math.max(12, clientX - 20),
+        top: clientY - 10,
+        bottom: clientY + 14,
+        right: clientX + 20,
+        width: selectedToken.w || 40,
+        height: selectedToken.h || 20
       }
       onSelectWord(selectedToken.word, clickRect)
+    } else {
+      logMobileDebug(`[VisualPdfReader] Tap at (${Math.round(mx)}, ${Math.round(my)}) did not match any nearby word token.`)
     }
-  }, [textItems, onSelectWord])
+  }, [textItems, currentPage, onSelectWord])
+
+  const handleClick = (e) => {
+    handleTapOnPage(e.clientX, e.clientY)
+  }
 
   if (loading) {
     return (
