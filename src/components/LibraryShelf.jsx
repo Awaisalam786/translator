@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as ImageIcon, Bookmark, Sparkles, Palette, LogOut, Star, User } from 'lucide-react'
+import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as ImageIcon, Bookmark, Sparkles, Palette, LogOut, Star, User, Loader2 } from 'lucide-react'
 import { getBooksMetadata, deleteBookComplete, getStorageStatus } from '../services/storageService'
 import { processBookUpload } from '../services/bookProcessor'
 import ProfileModal from './ProfileModal'
@@ -69,7 +69,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
     setIsProcessing(true)
     setErrorMsg('')
     setProgressPct(5)
-    setProgressMsg('Preparing files…')
+    setProgressMsg('Reading file...')
 
     try {
       const metadata = await processBookUpload({
@@ -81,17 +81,25 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
         }
       })
 
-      // Update books list in storage
+      // Update books list in storage & state immediately
       const currentBooks = getBooksMetadata()
-      const updated = [metadata, ...currentBooks]
+      const exists = currentBooks.some(b => b.id === metadata.id)
+      const updated = exists ? currentBooks : [metadata, ...currentBooks]
       localStorage.setItem('leselampe_books', JSON.stringify(updated))
 
-      await loadLibraryData()
+      setBooks(updated)
+      const status = await getStorageStatus()
+      setStorageInfo(status)
+
       setIsProcessing(false)
+      setProgressMsg('')
+      setProgressPct(0)
     } catch (err) {
       console.error('[Upload] Error:', err)
       setErrorMsg(err.message || 'Failed to process file. Please try again.')
       setIsProcessing(false)
+      setProgressMsg('')
+      setProgressPct(0)
     }
   }
 
@@ -334,6 +342,33 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
 
       {/* ── Main Library Grid ─────────────────────────────────────────────────── */}
       <main style={{ maxWidth: '1140px', margin: '0 auto' }}>
+        {/* Error Alert Banner */}
+        {errorMsg && (
+          <div style={{
+            marginBottom: '20px',
+            padding: '14px 18px',
+            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '12px',
+            color: '#f8fafc',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <AlertTriangle size={20} color="#ef4444" />
+              <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{errorMsg}</span>
+            </div>
+            <button
+              onClick={() => setErrorMsg('')}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1.2rem', padding: '0 4px' }}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -370,8 +405,8 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
             style={{
               height: '260px',
               borderRadius: '16px',
-              border: isDragOver ? '2px dashed #d97706' : '2px dashed rgba(255, 255, 255, 0.15)',
-              backgroundColor: isDragOver ? 'rgba(217, 119, 6, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+              border: isProcessing ? '2px solid var(--accent-gold)' : (isDragOver ? '2px dashed #d97706' : '2px dashed rgba(255, 255, 255, 0.15)'),
+              backgroundColor: isProcessing ? 'rgba(217, 119, 6, 0.08)' : (isDragOver ? 'rgba(217, 119, 6, 0.1)' : 'rgba(255, 255, 255, 0.03)'),
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -380,67 +415,111 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
               textAlign: 'center',
               boxSizing: 'border-box',
               transition: 'all 0.2s ease',
-              boxShadow: '0 6px 20px rgba(0,0,0,0.2)'
+              boxShadow: '0 6px 20px rgba(0,0,0,0.2)',
+              position: 'relative',
+              overflow: 'hidden'
             }}
           >
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(217, 119, 6, 0.15)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#d97706',
-              marginBottom: '12px'
-            }}>
-              <Plus size={24} />
-            </div>
+            {isProcessing ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', padding: '0 8px' }}>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '14px' }}>
+                  <Loader2 size={36} color="var(--accent-gold)" className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                </div>
+                <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#f8fafc', marginBottom: '4px' }}>
+                  Processing Book…
+                </span>
+                <span style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '14px', minHeight: '32px', display: 'flex', alignItems: 'center', textAlign: 'center' }}>
+                  {progressMsg || 'Saving locally to device...'}
+                </span>
+                
+                {/* Progress Bar Container */}
+                <div style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.1)', height: '6px', borderRadius: '3px', overflow: 'hidden', marginBottom: '6px' }}>
+                  <div style={{
+                    width: `${Math.max(5, Math.min(100, progressPct))}%`,
+                    height: '100%',
+                    backgroundColor: 'var(--accent-gold)',
+                    borderRadius: '3px',
+                    transition: 'width 0.3s ease'
+                  }} />
+                </div>
+                <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--accent-gold)' }}>
+                  {progressPct}%
+                </span>
+              </div>
+            ) : (
+              <>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(217, 119, 6, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#d97706',
+                  marginBottom: '12px'
+                }}>
+                  <Plus size={24} />
+                </div>
 
-            <label style={{
-              fontSize: '0.98rem',
-              fontWeight: 700,
-              color: '#f8fafc',
-              cursor: 'pointer',
-              marginBottom: '4px'
-            }}>
-              Upload a Book
-              <input
-                type="file"
-                accept=".txt,.pdf"
-                style={{ display: 'none' }}
-                onChange={(e) => e.target.files?.length && handleFileUpload(Array.from(e.target.files))}
-              />
-            </label>
+                <label style={{
+                  fontSize: '0.98rem',
+                  fontWeight: 700,
+                  color: '#f8fafc',
+                  cursor: 'pointer',
+                  marginBottom: '4px'
+                }}>
+                  Upload a Book
+                  <input
+                    type="file"
+                    accept=".txt,.pdf"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      if (e.target.files?.length) {
+                        const filesList = Array.from(e.target.files)
+                        e.target.value = ''
+                        handleFileUpload(filesList, false)
+                      }
+                    }}
+                  />
+                </label>
 
-            <span style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '14px' }}>
-              Drag & drop .PDF or .TXT file
-            </span>
+                <span style={{ fontSize: '0.78rem', color: '#94a3b8', marginBottom: '14px' }}>
+                  Drag & drop .PDF or .TXT file
+                </span>
 
-            {/* Photos of Pages Sub-Option */}
-            <label style={{
-              fontSize: '0.78rem',
-              color: '#38bdf8',
-              backgroundColor: 'rgba(56, 189, 248, 0.1)',
-              border: '1px solid rgba(56, 189, 248, 0.2)',
-              borderRadius: '20px',
-              padding: '4px 12px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontWeight: 600
-            }}>
-              <ImageIcon size={13} />
-              <span>Or add page photos (OCR)</span>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                style={{ display: 'none' }}
-                onChange={(e) => e.target.files?.length && handleFileUpload(Array.from(e.target.files), true)}
-              />
-            </label>
+                {/* Photos of Pages Sub-Option */}
+                <label style={{
+                  fontSize: '0.78rem',
+                  color: '#38bdf8',
+                  backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                  borderRadius: '20px',
+                  padding: '4px 12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontWeight: 600
+                }}>
+                  <ImageIcon size={13} />
+                  <span>Or add page photos (OCR)</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      if (e.target.files?.length) {
+                        const filesList = Array.from(e.target.files)
+                        e.target.value = ''
+                        handleFileUpload(filesList, true)
+                      }
+                    }}
+                  />
+                </label>
+              </>
+            )}
           </div>
 
           {/* ── Book Spine / Thumbnail Cover Cards ────────────────────────────── */}
