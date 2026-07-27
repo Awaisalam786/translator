@@ -163,7 +163,15 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
     let thumbnail = null
 
     try {
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
+      const loadingTask = pdfjsLib.getDocument({
+        data: arrayBuffer.slice(0),
+        cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
+        cMapPacked: true,
+        standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
+        disableStream: true,
+        disableAutoFetch: false,
+        disableFontFace: false
+      })
       const pdfDoc = await loadingTask.promise
       totalPages = pdfDoc.numPages || 1
       logMobileDebug('[BookProcessor] PDF.js parsed document!', { totalPages })

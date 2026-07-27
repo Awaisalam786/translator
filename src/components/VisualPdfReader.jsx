@@ -52,8 +52,10 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
       data: bufferCopy,
       cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
       cMapPacked: true,
+      standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
       disableStream: true,
       disableAutoFetch: false,
+      disableFontFace: false,
       isEvalSupported: false
     })
 
@@ -171,10 +173,21 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
         logMobileDebug(`[VisualPdfReader] Crisp Retina Canvas rendered: Page ${currentPage} [Scale: ${effectiveScale.toFixed(2)}x, DPR: ${dpr}x, Resolution: ${canvas.width}x${canvas.height}px]`)
 
+        // Pre-evaluate Operator List to force PDF.js font/CMap objects compilation before text extraction
+        try {
+          await page.getOperatorList()
+          logMobileDebug(`[VisualPdfReader] Page ${currentPage}: getOperatorList() completed. Fonts/CMaps compiled in memory.`)
+        } catch (opErr) {
+          logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} getOperatorList notice: ${opErr.message}`)
+        }
+
+        if (cancelled) return
+
         // Fetch text layer content with robust retry mechanism for mobile memory / async font loading
         let content = null
         try {
-          content = await page.getTextContent({ includeMarkedContent: true })
+          content = await page.getTextContent({ includeMarkedContent: true, disableCombineTextItems: false })
+          logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() 1st attempt: ${content?.items?.length || 0} raw text items`)
         } catch (e) {
           logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} getTextContent error: ${e.message}`)
         }
@@ -184,7 +197,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           await new Promise(r => setTimeout(r, 300))
           if (cancelled) return
           try {
-            content = await page.getTextContent({ includeMarkedContent: true })
+            content = await page.getTextContent({ includeMarkedContent: true, disableCombineTextItems: false })
             logMobileDebug(`[VisualPdfReader] Retry result for Page ${currentPage}: ${content?.items?.length || 0} items extracted`)
           } catch (retryErr) {
             logMobileDebug(`❌ [VisualPdfReader] Page ${currentPage} retry getTextContent error: ${retryErr.message}`)
