@@ -1,6 +1,61 @@
 import { createWorker } from 'tesseract.js'
+import * as pdfjsLib from 'pdfjs-dist'
 import { detectLanguage } from './languageDetector'
 import { saveLargeData } from './storageService'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+
+/**
+ * Cross-browser FileReader helpers for mobile WebViews / iOS Safari / Android Chrome
+ */
+function readAsArrayBuffer(file) {
+  if (typeof file.arrayBuffer === 'function') {
+    return file.arrayBuffer().catch(() => readAsArrayBufferFileReader(file))
+  }
+  return readAsArrayBufferFileReader(file)
+}
+
+function readAsArrayBufferFileReader(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error || new Error('FileReader failed to read file arrayBuffer.'))
+    reader.readAsArrayBuffer(file)
+  })
+}
+
+function readAsText(file) {
+  if (typeof file.text === 'function') {
+    return file.text().catch(() => readAsTextFileReader(file))
+  }
+  return readAsTextFileReader(file)
+}
+
+function readAsTextFileReader(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error || new Error('FileReader failed to read file text.'))
+    reader.readAsText(file)
+  })
+}
+
+/**
+ * Robust Magic-Bytes detection for PDF files (works on mobile where file.type or file.name may be missing/generic)
+ */
+function isPdfBufferOrFile(file, arrayBuffer) {
+  if (file?.type === 'application/pdf') return true
+  if (file?.name && file.name.toLowerCase().endsWith('.pdf')) return true
+
+  if (arrayBuffer && arrayBuffer.byteLength >= 5) {
+    const arr = new Uint8Array(arrayBuffer, 0, 5)
+    // Magic bytes for %PDF- are 0x25, 0x50, 0x44, 0x46, 0x2D
+    if (arr[0] === 0x25 && arr[1] === 0x50 && arr[2] === 0x44 && arr[3] === 0x46) {
+      return true
+    }
+  }
+  return false
+}
 
 /**
  * Process uploaded files (.txt, .pdf, or photos of pages) into a structured Book object
@@ -14,8 +69,15 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
   const bookId = `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`
   const uploadDate = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 
+  console.log('[BookProcessor] Processing upload for', files.length, 'file(s):', {
+    name: files[0]?.name,
+    size: files[0]?.size,
+    type: files[0]?.type,
+    isPhotosMode
+  })
+
   // ── Mode A: Photos of Pages (Multi-Image OCR) ──────────────────────────────────
-  if (isPhotosMode || files[0].type.startsWith('image/')) {
+  if (isPhotosMode || (files[0].type && files[0].type.startsWith('image/'))) {
     onProgress?.({ status: 'Processing page images...', progress: 10 })
 
     const pageImages = []
@@ -29,7 +91,7 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
         progress: Math.round(15 + ((i + 1) / files.length) * 75)
       })
 
-      // Downscale image for speed
+      // Downscale image for speed & memory safety on mobile
       const resizedDataUrl = await resizeImageIfNeeded(file, 1600)
       pageImages.push(resizedDataUrl)
 
@@ -48,10 +110,9 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
     const { code: sourceLang, name: sourceLangName } = await detectLanguage(sampleTextAcc)
 
     const title = files.length === 1
-      ? files[0].name.replace(/\.[^/.]+$/, '')
+      ? (files[0].name ? files[0].name.replace(/\.[^/.]+$/, '') : 'Photo Page')
       : `Book Photo Pages (${files.length} pages)`
 
-    // Page 1 is auto-thumbnail
     const thumbnail = pageImages[0] || null
 
     const bookMetadata = {
@@ -66,48 +127,53 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
       thumbnail
     }
 
-    // Save page images and OCR caches in local IndexedDB
-    onProgress?.({ status: 'Saving locally to database...', progress: 98 })
+    onProgress?.({ status: 'Saving locally to device storage...', progress: 98 })
     await saveLargeData(`book_blob_${bookId}`, { pageImages, ocrPages })
 
     return bookMetadata
   }
 
   const file = files[0]
-  const ext = file.name.split('.').pop().toLowerCase()
 
-  // ── Mode B: PDF File ──────────────────────────────────────────────────────────
-  if (ext === 'pdf' || file.type === 'application/pdf') {
-    onProgress?.({ status: 'Loading PDF document...', progress: 20 })
+  // Read raw ArrayBuffer upfront with mobile fallback
+  onProgress?.({ status: 'Reading file data...', progress: 15 })
+  let arrayBuffer = null
+  try {
+    arrayBuffer = await readAsArrayBuffer(file)
+  } catch (err) {
+    console.warn('[BookProcessor] ArrayBuffer read error:', err)
+  }
 
-    const arrayBuffer = await file.arrayBuffer()
+  // ── Mode B: PDF File (Checked via Extension, MIME, or %PDF- Magic Bytes) ─────
+  if (arrayBuffer && isPdfBufferOrFile(file, arrayBuffer)) {
+    onProgress?.({ status: 'Parsing PDF document...', progress: 30 })
 
     let totalPages = 1
     let sampleText = ''
     let thumbnail = null
 
-    if (window.pdfjsLib) {
-      try {
-        const loadingTask = window.pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
-        const pdfDoc = await loadingTask.promise
-        totalPages = pdfDoc.numPages
+    try {
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
+      const pdfDoc = await loadingTask.promise
+      totalPages = pdfDoc.numPages || 1
 
-        // Extract sample text from first page for language detection
+      // Extract sample text from first page for language detection
+      try {
         const page1 = await pdfDoc.getPage(1)
         const textContent = await page1.getTextContent()
         sampleText = textContent.items.map(it => it.str).join(' ')
-
-        // Render automatic thumbnail of Page 1
         thumbnail = await renderPdfThumbnail(page1)
       } catch (e) {
-        console.warn('[BookProcessor] Could not extract PDF metadata/thumbnail:', e)
+        console.warn('[BookProcessor] PDF metadata extraction notice:', e)
       }
+    } catch (pdfErr) {
+      console.error('[BookProcessor] PDF.js parsing error:', pdfErr)
     }
 
     onProgress?.({ status: 'Detecting language...', progress: 85 })
-    const { code: sourceLang, name: sourceLangName } = await detectLanguage(sampleText || file.name)
+    const { code: sourceLang, name: sourceLangName } = await detectLanguage(sampleText || file.name || 'Book')
 
-    const title = file.name.replace(/\.[^/.]+$/, '')
+    const title = file.name ? file.name.replace(/\.[^/.]+$/, '') : 'PDF Document'
     const bookMetadata = {
       id: bookId,
       title,
@@ -129,7 +195,13 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
   // ── Mode C: Text File (.txt) ──────────────────────────────────────────────────
   onProgress?.({ status: 'Reading text file...', progress: 30 })
 
-  const rawText = await file.text()
+  let rawText = ''
+  try {
+    rawText = await readAsText(file)
+  } catch (err) {
+    throw new Error(`Failed to read text file: ${err.message}`)
+  }
+
   if (!rawText || !rawText.trim()) {
     throw new Error('The selected text file is empty.')
   }
@@ -141,7 +213,7 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
   const sampleText = pages[0] || rawText
   const { code: sourceLang, name: sourceLangName } = await detectLanguage(sampleText)
 
-  const title = file.name.replace(/\.[^/.]+$/, '')
+  const title = file.name ? file.name.replace(/\.[^/.]+$/, '') : 'Text Document'
   const bookMetadata = {
     id: bookId,
     title,
@@ -180,7 +252,7 @@ async function renderPdfThumbnail(page) {
   }
 }
 
-// ── Downscale large uploaded photos for OCR speed ─────────────────────────────
+// ── Downscale large uploaded photos for OCR speed & memory ────────────────────
 function resizeImageIfNeeded(file, maxDimension = 1600) {
   return new Promise((resolve, reject) => {
     const img = new Image()
@@ -220,8 +292,8 @@ function resizeImageIfNeeded(file, maxDimension = 1600) {
 
 // ── Run Tesseract OCR on a page image ─────────────────────────────────────────
 async function runOcrOnImage(imageDataUrl) {
-  const worker = await createWorker('deu+eng+fra+spa')
   try {
+    const worker = await createWorker('deu+eng+fra+spa')
     const ret = await worker.recognize(imageDataUrl)
     const words = (ret.data.words || [])
       .filter(w => w.text && w.text.trim())
@@ -238,7 +310,7 @@ async function runOcrOnImage(imageDataUrl) {
       imageHeight: ret.data.imageHeight || 1400
     }
   } catch (err) {
-    await worker.terminate()
+    console.warn('[BookProcessor] OCR error:', err)
     return { text: '', words: [] }
   }
 }

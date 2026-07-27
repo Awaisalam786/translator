@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Globe, Palette } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Globe, Palette, AlertTriangle } from 'lucide-react'
 import { getLargeData, saveBooksMetadata, getBooksMetadata } from '../services/storageService'
 import TranslationSlip from './TranslationSlip'
 import VisualPdfReader from './VisualPdfReader'
@@ -405,6 +405,22 @@ export default function ReaderView({
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginTop: '80px', color: '#94a3b8' }}>
             <Loader2 size={32} color="#d97706" style={{ animation: 'spin 1s linear infinite' }} />
             <span>Loading book contents…</span>
+          </div>
+        ) : !bookData ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '16px', marginTop: '60px', padding: '24px', backgroundColor: '#1a1d2e', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', maxWidth: '400px' }}>
+            <AlertTriangle size={42} color="#ef4444" />
+            <div>
+              <h3 style={{ margin: '0 0 6px', color: '#fff' }}>Could Not Load Book Data</h3>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>
+                The file content could not be retrieved from local storage. This can happen if browser memory was cleared or storage quota was exceeded on mobile.
+              </p>
+            </div>
+            <button
+              onClick={onBackToLibrary}
+              style={{ padding: '10px 20px', borderRadius: '10px', border: 'none', backgroundColor: '#d97706', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Back to Book Shelf
+            </button>
           </div>
         ) : (
           <>
