@@ -1,4 +1,5 @@
 import { get, set, del } from 'idb-keyval'
+import { logMobileDebug } from '../components/DebugOverlay'
 
 // Storage modes
 const STORAGE_MODES = {
@@ -28,9 +29,10 @@ export async function saveLargeData(key, data) {
   try {
     await set(key, data)
     activeStorageMode = STORAGE_MODES.INDEXED_DB
+    logMobileDebug(`[Storage] Saved ${key} to IndexedDB successfully!`)
     return true
   } catch (err) {
-    console.warn('[Storage] IndexedDB failed, attempting chunked localStorage fallback:', err)
+    logMobileDebug(`⚠️ [Storage] IndexedDB save failed: ${err.message}. Trying Chunked localStorage...`)
   }
 
   // 2. Fallback: Chunked localStorage
@@ -57,26 +59,30 @@ export async function saveLargeData(key, data) {
     localStorage.setItem(`${key}_chunk_meta`, JSON.stringify({ totalChunks, isBase64: data instanceof ArrayBuffer }))
 
     activeStorageMode = STORAGE_MODES.CHUNKED_LOCAL
+    logMobileDebug(`[Storage] Saved ${key} to Chunked localStorage successfully!`)
     return true
   } catch (err) {
-    console.warn('[Storage] Chunked localStorage failed, falling back to In-Memory store:', err)
+    logMobileDebug(`⚠️ [Storage] Chunked localStorage failed: ${err.message}. Falling back to In-Memory store...`)
   }
 
   // 3. Fallback: In-Memory
   inMemoryStore.set(key, data)
   activeStorageMode = STORAGE_MODES.IN_MEMORY
+  logMobileDebug(`[Storage] Saved ${key} to In-Memory store!`)
   return true
 }
 
 export async function getLargeData(key) {
+  logMobileDebug(`[Storage] Reading ${key}...`)
   // 1. Check IndexedDB
   try {
     const val = await get(key)
     if (val !== undefined && val !== null) {
+      logMobileDebug(`[Storage] Read ${key} from IndexedDB successfully!`)
       return val
     }
   } catch (err) {
-    console.warn('[Storage] IndexedDB read error:', err)
+    logMobileDebug(`⚠️ [Storage] IndexedDB read error: ${err.message}`)
   }
 
   // 2. Check Chunked localStorage

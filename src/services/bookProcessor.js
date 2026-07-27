@@ -2,6 +2,7 @@ import { createWorker } from 'tesseract.js'
 import * as pdfjsLib from 'pdfjs-dist'
 import { detectLanguage } from './languageDetector'
 import { saveLargeData } from './storageService'
+import { logMobileDebug } from '../components/DebugOverlay'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
 
@@ -69,7 +70,7 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
   const bookId = `book_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`
   const uploadDate = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 
-  console.log('[BookProcessor] Processing upload for', files.length, 'file(s):', {
+  logMobileDebug(`[BookProcessor] Upload started for ${files.length} file(s)`, {
     name: files[0]?.name,
     size: files[0]?.size,
     type: files[0]?.type,
@@ -78,6 +79,7 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
 
   // ── Mode A: Photos of Pages (Multi-Image OCR) ──────────────────────────────────
   if (isPhotosMode || (files[0].type && files[0].type.startsWith('image/'))) {
+    logMobileDebug('[BookProcessor] Processing in Mode A: Photos (OCR)')
     onProgress?.({ status: 'Processing page images...', progress: 10 })
 
     const pageImages = []
@@ -128,7 +130,9 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
     }
 
     onProgress?.({ status: 'Saving locally to device storage...', progress: 98 })
+    logMobileDebug('[BookProcessor] Saving photo pages to storage...')
     await saveLargeData(`book_blob_${bookId}`, { pageImages, ocrPages })
+    logMobileDebug('[BookProcessor] Saved photo pages successfully!', { bookId })
 
     return bookMetadata
   }
@@ -137,16 +141,22 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
 
   // Read raw ArrayBuffer upfront with mobile fallback
   onProgress?.({ status: 'Reading file data...', progress: 15 })
+  logMobileDebug('[BookProcessor] Reading ArrayBuffer for file...', { name: file.name, size: file.size })
   let arrayBuffer = null
   try {
     arrayBuffer = await readAsArrayBuffer(file)
+    logMobileDebug('[BookProcessor] Read ArrayBuffer successfully!', { byteLength: arrayBuffer?.byteLength })
   } catch (err) {
-    console.warn('[BookProcessor] ArrayBuffer read error:', err)
+    logMobileDebug(`❌ [BookProcessor] ArrayBuffer read failed: ${err.message}`)
   }
 
+  const isPdf = arrayBuffer && isPdfBufferOrFile(file, arrayBuffer)
+  logMobileDebug(`[BookProcessor] PDF Magic-Bytes Check Result: ${isPdf ? 'PDF CONFIRMED (%PDF-)' : 'Not PDF'}`)
+
   // ── Mode B: PDF File (Checked via Extension, MIME, or %PDF- Magic Bytes) ─────
-  if (arrayBuffer && isPdfBufferOrFile(file, arrayBuffer)) {
+  if (isPdf) {
     onProgress?.({ status: 'Parsing PDF document...', progress: 30 })
+    logMobileDebug('[BookProcessor] Processing in Mode B: PDF Document')
 
     let totalPages = 1
     let sampleText = ''
@@ -156,6 +166,7 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
       const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) })
       const pdfDoc = await loadingTask.promise
       totalPages = pdfDoc.numPages || 1
+      logMobileDebug('[BookProcessor] PDF.js parsed document!', { totalPages })
 
       // Extract sample text from first page for language detection
       try {
@@ -164,10 +175,10 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
         sampleText = textContent.items.map(it => it.str).join(' ')
         thumbnail = await renderPdfThumbnail(page1)
       } catch (e) {
-        console.warn('[BookProcessor] PDF metadata extraction notice:', e)
+        logMobileDebug(`⚠️ [BookProcessor] PDF metadata/thumbnail notice: ${e.message}`)
       }
     } catch (pdfErr) {
-      console.error('[BookProcessor] PDF.js parsing error:', pdfErr)
+      logMobileDebug(`❌ [BookProcessor] PDF.js parsing error: ${pdfErr.message}`)
     }
 
     onProgress?.({ status: 'Detecting language...', progress: 85 })
@@ -187,7 +198,9 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
     }
 
     onProgress?.({ status: 'Saving PDF locally to device storage...', progress: 95 })
+    logMobileDebug('[BookProcessor] Saving PDF ArrayBuffer to storage...')
     await saveLargeData(`book_blob_${bookId}`, arrayBuffer)
+    logMobileDebug('[BookProcessor] Saved PDF to storage successfully!', { bookId, size: arrayBuffer.byteLength })
 
     return bookMetadata
   }

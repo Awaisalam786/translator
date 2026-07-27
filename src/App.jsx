@@ -4,6 +4,7 @@ import LibraryShelf from './components/LibraryShelf'
 import ReaderView from './components/ReaderView'
 import VocabularyModal from './components/VocabularyModal'
 import ThemeSettingsModal from './components/ThemeSettingsModal'
+import DebugOverlay from './components/DebugOverlay'
 import { initStorage } from './services/storageService'
 
 const DECK_STORAGE_KEY = 'leselampe_deck'
@@ -127,6 +128,8 @@ export default function App() {
           onClose={() => setShowThemeModal(false)}
         />
       )}
+      {/* Mobile Diagnostics Overlay */}
+      <DebugOverlay />
     </StudentAuthGate>
   )
 }

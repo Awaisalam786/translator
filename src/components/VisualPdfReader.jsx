@@ -1,8 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
-import { ZoomIn, ZoomOut, Loader2, Maximize2, Minimize2 } from 'lucide-react'
+import { ZoomIn, ZoomOut, Loader2, Maximize2, Minimize2, AlertTriangle, RefreshCw } from 'lucide-react'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+// Set up PDF.js worker CDN URL with fallback handling
+try {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+} catch (e) {
+  console.warn('[PDF.js] Worker setup notice:', e)
+}
 
 export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectWord }) {
   const canvasRef = useRef(null)
@@ -10,6 +15,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
   const wrapperRef = useRef(null)
 
   const [pdfDoc, setPdfDoc] = useState(null)
+  const [pdfError, setPdfError] = useState(null)
   const [scaleMode, setScaleMode] = useState('width') // 'width' (Fit Width, fills display), 'page' (Fit Page), or 'custom'
   const [customScale, setCustomScale] = useState(null)
   const [autoScaleW, setAutoScaleW] = useState(1.0)
@@ -22,16 +28,40 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
   useEffect(() => {
     if (!fileBuffer) return
     setLoading(true)
+    setPdfError(null)
     setPdfDoc(null)
     setTextItems([])
 
-    pdfjsLib.getDocument({ data: fileBuffer.slice(0) }).promise
+    console.log('[VisualPdfReader] Loading PDF document buffer of size:', fileBuffer?.byteLength || fileBuffer?.length)
+
+    let bufferCopy = null
+    try {
+      if (fileBuffer instanceof ArrayBuffer) {
+        bufferCopy = fileBuffer.slice(0)
+      } else if (fileBuffer?.buffer instanceof ArrayBuffer) {
+        bufferCopy = fileBuffer.buffer.slice(0)
+      } else {
+        bufferCopy = fileBuffer
+      }
+    } catch (e) {
+      bufferCopy = fileBuffer
+    }
+
+    const loadingTask = pdfjsLib.getDocument({
+      data: bufferCopy,
+      cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
+      cMapPacked: true
+    })
+
+    loadingTask.promise
       .then(pdf => {
+        console.log('[VisualPdfReader] PDF loaded successfully! Total pages:', pdf.numPages)
         setPdfDoc(pdf)
         setLoading(false)
       })
       .catch(err => {
-        console.error('[PDF] Load error:', err)
+        console.error('[VisualPdfReader] Document loading failed:', err)
+        setPdfError(err.message || 'Could not parse PDF file format. The file may be corrupt or encrypted.')
         setLoading(false)
       })
   }, [fileBuffer])
@@ -313,21 +343,32 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           transition: 'background-color 0.25s ease'
         }}
       >
-        <div
-          ref={containerRef}
-          onClick={handleClick}
-          style={{
-            position: 'relative',
-            cursor: 'pointer',
-            boxShadow: '0 12px 40px rgba(0,0,0,0.7)',
-            borderRadius: '6px',
-            overflow: 'hidden',
-            opacity: pageLoading ? 0.6 : 1,
-            transition: 'opacity 0.15s ease',
-            maxWidth: '100%',
-            margin: '0 auto'
-          }}
-        >
+        {pdfError ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '16px', marginTop: '60px', padding: '24px', backgroundColor: '#1a1d2e', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.3)', maxWidth: '400px' }}>
+            <AlertTriangle size={42} color="#ef4444" />
+            <div>
+              <h3 style={{ margin: '0 0 6px', color: '#fff' }}>PDF Reader Notice</h3>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>
+                {pdfError}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div
+            ref={containerRef}
+            onClick={handleClick}
+            style={{
+              position: 'relative',
+              cursor: 'pointer',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.7)',
+              borderRadius: '6px',
+              overflow: 'hidden',
+              opacity: pageLoading ? 0.6 : 1,
+              transition: 'opacity 0.15s ease',
+              maxWidth: '100%',
+              margin: '0 auto'
+            }}
+          >
           <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
 
           {/* Interactive Pixel-Perfect Text Layer Overlay */}
@@ -378,6 +419,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   )
