@@ -18,11 +18,42 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
   const [errorMsg, setErrorMsg] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [localProfile, setLocalProfile] = useState(userProfile)
 
-  // Load books & storage estimate on mount
+  // Sync userProfile prop updates to localProfile
+  useEffect(() => {
+    if (userProfile) {
+      setLocalProfile(userProfile)
+    }
+  }, [userProfile])
+
+  // Load books, storage estimate, and live profile on mount
   useEffect(() => {
     loadLibraryData()
+    fetchLiveHeaderProfile()
   }, [])
+
+  const fetchLiveHeaderProfile = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single()
+
+        if (prof) {
+          console.log('[LibraryShelf] Live profile loaded for header greeting:', prof)
+          setLocalProfile(prof)
+        }
+      }
+    } catch (e) {
+      console.warn('[LibraryShelf] Error loading profile for header:', e)
+    }
+  }
+
+  const effectiveProfile = localProfile || userProfile
 
   const loadLibraryData = async () => {
     const list = getBooksMetadata()
@@ -146,7 +177,11 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
               color: 'var(--text-muted)',
               margin: 0
             }}>
-              {userProfile?.full_name ? `Hi, ${userProfile.full_name} — Foreign Language Reader` : (userProfile?.email ? `Hi, ${userProfile.email} — Foreign Language Reader` : 'Foreign Language Reader with Tap-to-Translate')}
+              {effectiveProfile?.full_name 
+                ? `Hi, ${effectiveProfile.full_name} — Foreign Language Reader` 
+                : (effectiveProfile?.email 
+                  ? `Hi, ${effectiveProfile.email} — Foreign Language Reader` 
+                  : 'Foreign Language Reader with Tap-to-Translate')}
             </p>
           </div>
         </div>
@@ -218,7 +253,13 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
             }}
           >
             <User size={16} color="#38bdf8" />
-            <span>{userProfile?.full_name ? `Hi, ${userProfile.full_name.split(' ')[0]}` : (userProfile?.email ? `Hi, ${userProfile.email.split('@')[0]}` : 'Profile')}</span>
+            <span>
+              {effectiveProfile?.full_name 
+                ? `Hi, ${effectiveProfile.full_name.split(' ')[0]}` 
+                : (effectiveProfile?.email 
+                  ? `Hi, ${effectiveProfile.email.split('@')[0]}` 
+                  : 'Profile')}
+            </span>
           </button>
 
           <button
@@ -264,8 +305,29 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
       {/* Profile Settings Modal */}
       {showProfileModal && (
         <ProfileModal
-          userProfile={userProfile}
-          onSaveProfile={onSaveProfile || onSaveName}
+          userProfile={effectiveProfile}
+          onSaveProfile={async (data) => {
+            const saveHandler = onSaveProfile || onSaveName
+            let result = false
+            if (saveHandler) {
+              result = await saveHandler(data)
+            } else {
+              try {
+                const { data: { user } } = await supabase.auth.getUser()
+                if (user) {
+                  const { error } = await supabase.from('profiles').update(data).eq('id', user.id)
+                  result = !error
+                }
+              } catch (e) {
+                console.error('[LibraryShelf] Direct profile update error:', e)
+              }
+            }
+            if (result) {
+              setLocalProfile(prev => ({ ...prev, ...data }))
+              fetchLiveHeaderProfile()
+            }
+            return result
+          }}
           onClose={() => setShowProfileModal(false)}
         />
       )}
