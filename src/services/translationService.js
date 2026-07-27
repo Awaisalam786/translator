@@ -1,3 +1,5 @@
+import { logMobileDebug } from '../components/DebugOverlay'
+
 // Translation, Synonyms & Pronunciation Pipeline
 
 const GOOGLE_GTX_URL = 'https://translate.googleapis.com/translate_a/single'
@@ -9,6 +11,15 @@ const DATAMUSE_URL = 'https://api.datamuse.com/words'
 const translationCache = new Map()
 const synonymCache = new Map()
 
+// Helper to sanitize translation output
+function sanitizeText(str) {
+  if (!str) return ''
+  return str
+    .replace(/[\r\n\t\x00-\x1F\x7F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 // ── 1. Translation ─────────────────────────────────────────────────────────────
 
 export async function translateWord(word, sourceLang = 'de', targetLang = 'en', sentenceContext = '') {
@@ -19,31 +30,37 @@ export async function translateWord(word, sourceLang = 'de', targetLang = 'en', 
 
   const cacheKey = `${cleanWord.toLowerCase()}_${sourceLang}_${targetLang}`
   if (translationCache.has(cacheKey)) {
-    return translationCache.get(cacheKey)
+    const cached = translationCache.get(cacheKey)
+    logMobileDebug(`[TranslationService] ➔ Cache hit for "${cleanWord}": "${cached}"`)
+    return cached
   }
 
-  // 1. Try Google GTX public web translation endpoint
+  logMobileDebug(`[TranslationService] ➔ Translating word: "${cleanWord}" (${sourceLang} ➔ ${targetLang})`)
+
+  // 1. Try Google GTX with auto source language detection (prevents language misclassification & MyMemory garbage fallback)
   try {
-    const url = `${GOOGLE_GTX_URL}?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(cleanWord)}`
+    const srcParam = (sourceLang && sourceLang !== targetLang) ? sourceLang : 'auto'
+    const url = `${GOOGLE_GTX_URL}?client=gtx&sl=${srcParam}&tl=${targetLang}&dt=t&q=${encodeURIComponent(cleanWord)}`
     const res = await fetch(url)
     if (res.ok) {
       const data = await res.json()
       // data[0][0][0] is translated string
       if (data && data[0] && data[0][0] && data[0][0][0]) {
         const translated = sanitizeText(data[0][0][0])
-        if (translated && translated.toLowerCase() !== cleanWord.toLowerCase()) {
+        if (translated) {
+          logMobileDebug(`[TranslationService] ✅ Google GTX Result for "${cleanWord}": "${translated}"`)
           translationCache.set(cacheKey, translated)
           return translated
         }
       }
     }
   } catch (err) {
-    console.warn('[Translation] Google GTX failed, trying MyMemory fallback:', err)
+    logMobileDebug(`⚠️ [TranslationService] Google GTX network error for "${cleanWord}": ${err.message}`)
   }
 
   // 2. Fallback: MyMemory free translation API
   try {
-    const langpair = `${sourceLang}|${targetLang}`
+    const langpair = `${sourceLang === targetLang ? 'auto' : sourceLang}|${targetLang}`
     const url = `${MYMEMORY_URL}?q=${encodeURIComponent(cleanWord)}&langpair=${encodeURIComponent(langpair)}`
     const res = await fetch(url)
     if (res.ok) {
@@ -51,18 +68,19 @@ export async function translateWord(word, sourceLang = 'de', targetLang = 'en', 
       const t = data?.responseData?.translatedText
       if (t && !t.includes('INVALID SOURCE') && !t.includes('PLEASE SELECT') && !t.includes('MYMEMORY')) {
         const translated = sanitizeText(t)
-        if (translated) {
+        if (translated && translated.toLowerCase() !== cleanWord.toLowerCase()) {
+          logMobileDebug(`[TranslationService] MyMemory Result for "${cleanWord}": "${translated}"`)
           translationCache.set(cacheKey, translated)
           return translated
         }
       }
     }
   } catch (err) {
-    console.warn('[Translation] MyMemory failed:', err)
+    logMobileDebug(`⚠️ [TranslationService] MyMemory failed: ${err.message}`)
   }
 
-  // 3. Fallback: Return dash
-  return '—'
+  // 3. Fallback: Return original clean word if translation fails
+  return cleanWord
 }
 
 // ── 2. Synonyms in Original Book Language ──────────────────────────────────────
@@ -151,14 +169,6 @@ export function speakWord(word, langCode = 'de') {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function sanitizeText(raw) {
-  if (!raw) return ''
-  return raw
-    .replace(/[\r\n\t\x00-\x1F\x7F]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
 
 function getLocaleCode(langCode) {
   const map = {
