@@ -51,17 +51,21 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     const loadingTask = pdfjsLib.getDocument({
       data: bufferCopy,
       cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
-      cMapPacked: true
+      cMapPacked: true,
+      disableStream: true,
+      disableAutoFetch: false,
+      isEvalSupported: false
     })
 
     loadingTask.promise
       .then(pdf => {
-        console.log('[VisualPdfReader] PDF loaded successfully! Total pages:', pdf.numPages)
+        logMobileDebug(`[VisualPdfReader] PDF document loaded successfully! Total pages: ${pdf.numPages}`)
         setPdfDoc(pdf)
         setLoading(false)
       })
       .catch(err => {
         console.error('[VisualPdfReader] Document loading failed:', err)
+        logMobileDebug(`❌ [VisualPdfReader] PDF loading error: ${err.message}`)
         setPdfError(err.message || 'Could not parse PDF file format. The file may be corrupt or encrypted.')
         setLoading(false)
       })
@@ -167,12 +171,31 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
         logMobileDebug(`[VisualPdfReader] Crisp Retina Canvas rendered: Page ${currentPage} [Scale: ${effectiveScale.toFixed(2)}x, DPR: ${dpr}x, Resolution: ${canvas.width}x${canvas.height}px]`)
 
-        // Build word-level token hit map in CSS Display Logical Pixels with exact character offset measurement
-        const content = await page.getTextContent()
+        // Fetch text layer content with robust retry mechanism for mobile memory / async font loading
+        let content = null
+        try {
+          content = await page.getTextContent({ includeMarkedContent: true })
+        } catch (e) {
+          logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} getTextContent error: ${e.message}`)
+        }
+
+        if (!content || !content.items || content.items.length === 0) {
+          logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage}: 0 text items returned on 1st attempt. Retrying in 300ms...`)
+          await new Promise(r => setTimeout(r, 300))
+          if (cancelled) return
+          try {
+            content = await page.getTextContent({ includeMarkedContent: true })
+            logMobileDebug(`[VisualPdfReader] Retry result for Page ${currentPage}: ${content?.items?.length || 0} items extracted`)
+          } catch (retryErr) {
+            logMobileDebug(`❌ [VisualPdfReader] Page ${currentPage} retry getTextContent error: ${retryErr.message}`)
+          }
+        }
+
         if (cancelled) return
+        const textItemsList = content?.items || []
 
         const tokens = []
-        for (const it of content.items) {
+        for (const it of textItemsList) {
           if (!it.str || !it.str.trim()) continue
 
           const tx = pdfjsLib.Util.transform(viewport.transform, it.transform)
@@ -235,9 +258,9 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           }
         }
 
-        logMobileDebug(`[VisualPdfReader] Page ${currentPage}: Extracted ${content.items.length} raw text items, built ${tokens.length} CSS-aligned word tokens`)
+        logMobileDebug(`[VisualPdfReader] Page ${currentPage}: Extracted ${textItemsList.length} raw text items, built ${tokens.length} CSS-aligned word tokens`)
         if (tokens.length === 0) {
-          logMobileDebug(`⚠️ [VisualPdfReader] Notice: 0 word tokens extracted on page ${currentPage}. PDF might be a scanned image or non-standard font encoding.`)
+          logMobileDebug(`⚠️ [VisualPdfReader] Notice: 0 word tokens extracted on Page ${currentPage}. Page may be a scanned image or contain custom subsetted font glyphs.`)
         }
 
         setTextItems(tokens)
