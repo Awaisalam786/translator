@@ -103,6 +103,8 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     effectiveScale = autoScaleW
   }
 
+  const renderTaskRef = useRef(null)
+
   // ── Render PDF Page to Canvas ─────────────────────────────────────────────
   useEffect(() => {
     if (!pdfDoc || effectiveScale <= 0) return
@@ -125,10 +127,34 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-        await page.render({ canvasContext: ctx, viewport }).promise
+        // Cancel any active PDF.js render operation on this canvas before starting a new one (prevents zoom race condition)
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel()
+          } catch (e) {
+            // Ignore cancellation warning
+          }
+          renderTaskRef.current = null
+        }
+
+        const renderTask = page.render({ canvasContext: ctx, viewport })
+        renderTaskRef.current = renderTask
+
+        try {
+          await renderTask.promise
+          renderTaskRef.current = null
+        } catch (renderErr) {
+          renderTaskRef.current = null
+          if (renderErr?.name === 'RenderingCancelledException' || renderErr?.message?.includes('cancelled')) {
+            logMobileDebug('[VisualPdfReader] Render cancelled due to rapid scale/page change.')
+            return
+          }
+          throw renderErr
+        }
+
         if (cancelled) return
 
-        logMobileDebug(`[VisualPdfReader] Canvas rendered page ${currentPage} at scale ${effectiveScale.toFixed(2)}`)
+        logMobileDebug(`[VisualPdfReader] Canvas rendered page ${currentPage} at scale ${effectiveScale.toFixed(2)} (${canvas.width}x${canvas.height}px)`)
 
         // Build word-level token hit map for 100% accurate tap-to-translate
         const content = await page.getTextContent()
@@ -189,36 +215,54 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     }
 
     render()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (renderTaskRef.current) {
+        try { renderTaskRef.current.cancel() } catch (e) {}
+        renderTaskRef.current = null
+      }
+    }
   }, [pdfDoc, currentPage, effectiveScale])
 
   // ── Mobile Touch & Click Tap-to-Translate Handler ──────────────────────────────
   const handleTapOnPage = useCallback((clientX, clientY) => {
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (!rect) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    if (!rect || rect.width === 0 || rect.height === 0) return
 
     if (!textItems.length) {
       logMobileDebug(`⚠️ [VisualPdfReader] Tap ignored: 0 text tokens available on Page ${currentPage}`)
       return
     }
 
-    const mx = clientX - rect.left
-    const my = clientY - rect.top
+    // 1. Calculate raw tap offset in CSS DOM display space
+    const domX = clientX - rect.left
+    const domY = clientY - rect.top
+
+    // 2. Convert DOM display coordinates to Canvas Buffer coordinate space
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+
+    const canvasX = domX * scaleX
+    const canvasY = domY * scaleY
+
+    logMobileDebug(`[VisualPdfReader] Tap DOM (${Math.round(domX)}, ${Math.round(domY)}) -> Canvas (${Math.round(canvasX)}, ${Math.round(canvasY)}) [DPI Scale: ${scaleX.toFixed(2)}x]`)
 
     let exactMatch = null
     let closestMatch = null
-    let minDistance = 50 // 50px mobile touch search radius
+    let minDistance = 60 * scaleX // Search radius scaled to canvas buffer space
 
     for (const token of textItems) {
-      const padY = 8
-      const padX = 8
-      if (mx >= (token.x - padX) && mx <= (token.x + token.w + padX) &&
-          my >= (token.y - padY) && my <= (token.y + token.h + padY)) {
+      const padY = 12 * scaleY
+      const padX = 12 * scaleX
+      if (canvasX >= (token.x - padX) && canvasX <= (token.x + token.w + padX) &&
+          canvasY >= (token.y - padY) && canvasY <= (token.y + token.h + padY)) {
         exactMatch = token
         break
       }
 
-      const dist = Math.hypot(mx - token.cx, my - token.cy)
+      const dist = Math.hypot(canvasX - token.cx, canvasY - token.cy)
       if (dist < minDistance) {
         minDistance = dist
         closestMatch = token
@@ -228,7 +272,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     const selectedToken = exactMatch || closestMatch
 
     if (selectedToken) {
-      logMobileDebug(`[VisualPdfReader] ✅ Word tapped: "${selectedToken.word}"`)
+      logMobileDebug(`[VisualPdfReader] ✅ Word matched: "${selectedToken.word}"`)
       const clickRect = {
         left: Math.max(12, clientX - 20),
         top: clientY - 10,
@@ -239,7 +283,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
       }
       onSelectWord(selectedToken.word, clickRect)
     } else {
-      logMobileDebug(`[VisualPdfReader] Tap at (${Math.round(mx)}, ${Math.round(my)}) did not match any nearby word token.`)
+      logMobileDebug(`[VisualPdfReader] Tap at Canvas (${Math.round(canvasX)}, ${Math.round(canvasY)}) did not match any nearby word token.`)
     }
   }, [textItems, currentPage, onSelectWord])
 
