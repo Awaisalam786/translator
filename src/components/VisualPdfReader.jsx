@@ -186,24 +186,36 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
         if (cancelled) return
 
-        // Fetch text layer content with robust retry mechanism for mobile memory / async font loading
+        // Multi-Strategy Text Extraction Pipeline (Parses Form XObjects, Marked Content & Mixed Image/Text Streams)
         let content = null
+
+        // Strategy 1: Standard recursive stream extraction (parses Form XObjects & mixed layouts)
         try {
-          content = await page.getTextContent({ includeMarkedContent: true, disableCombineTextItems: false })
-          logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() 1st attempt: ${content?.items?.length || 0} raw text items`)
-        } catch (e) {
-          logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} getTextContent error: ${e.message}`)
+          content = await page.getTextContent()
+          logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 1: ${content?.items?.length || 0} raw text items`)
+        } catch (e1) {
+          logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} Strategy 1 error: ${e1.message}`)
         }
 
+        // Strategy 2: Uncombined text items fallback
         if (!content || !content.items || content.items.length === 0) {
-          logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage}: 0 text items returned on 1st attempt. Retrying in 300ms...`)
-          await new Promise(r => setTimeout(r, 300))
+          try {
+            content = await page.getTextContent({ disableCombineTextItems: true })
+            logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 2: ${content?.items?.length || 0} items extracted`)
+          } catch (e2) {
+            logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} Strategy 2 error: ${e2.message}`)
+          }
+        }
+
+        // Strategy 3: Marked Content fallback with 200ms delay
+        if (!content || !content.items || content.items.length === 0) {
+          await new Promise(r => setTimeout(r, 200))
           if (cancelled) return
           try {
-            content = await page.getTextContent({ includeMarkedContent: true, disableCombineTextItems: false })
-            logMobileDebug(`[VisualPdfReader] Retry result for Page ${currentPage}: ${content?.items?.length || 0} items extracted`)
-          } catch (retryErr) {
-            logMobileDebug(`❌ [VisualPdfReader] Page ${currentPage} retry getTextContent error: ${retryErr.message}`)
+            content = await page.getTextContent({ includeMarkedContent: true })
+            logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 3: ${content?.items?.length || 0} items extracted`)
+          } catch (e3) {
+            logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} Strategy 3 error: ${e3.message}`)
           }
         }
 
@@ -274,10 +286,46 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           }
         }
 
-        logMobileDebug(`[VisualPdfReader] Page ${currentPage}: Extracted ${textItemsList.length} raw text items, built ${tokens.length} CSS-aligned word tokens`)
-        if (tokens.length === 0) {
-          logMobileDebug(`⚠️ [VisualPdfReader] Notice: 0 word tokens extracted on Page ${currentPage}. Page may be a scanned image or contain custom subsetted font glyphs.`)
+        // Strategy 4: Client-Side Instant OCR Fallback on Rendered Canvas for Image/Vector Pages
+        if (tokens.length === 0 && canvas) {
+          logMobileDebug(`⚠️ [VisualPdfReader] 0 PDF.str tokens extracted on Page ${currentPage}. Initiating Client-Side OCR Fallback on rendered canvas...`)
+          try {
+            const { createWorker } = await import('tesseract.js')
+            const imageDataUrl = canvas.toDataURL('image/jpeg', 0.85)
+            const worker = await createWorker('deu+eng')
+            const ret = await worker.recognize(imageDataUrl)
+            await worker.terminate()
+
+            if (ret?.data?.words) {
+              for (const w of ret.data.words) {
+                const rawText = w.text ? w.text.trim() : ''
+                const clean = rawText.replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '').trim()
+                if (!clean || clean.length < 1) continue
+
+                const bbox = w.bbox
+                const wordX = Math.floor(bbox.x0 / dpr)
+                const wordY = Math.floor(bbox.y0 / dpr)
+                const wordW = Math.max(10, Math.ceil((bbox.x1 - bbox.x0) / dpr))
+                const wordH = Math.max(10, Math.ceil((bbox.y1 - bbox.y0) / dpr))
+
+                tokens.push({
+                  word: clean,
+                  x: wordX,
+                  y: wordY,
+                  w: wordW,
+                  h: wordH,
+                  cx: wordX + wordW / 2,
+                  cy: wordY + wordH / 2
+                })
+              }
+              logMobileDebug(`[VisualPdfReader] ✅ Instant OCR Fallback extracted ${tokens.length} tokens for Page ${currentPage}!`)
+            }
+          } catch (ocrErr) {
+            logMobileDebug(`❌ [VisualPdfReader] Client-Side OCR Fallback error on Page ${currentPage}: ${ocrErr.message}`)
+          }
         }
+
+        logMobileDebug(`[VisualPdfReader] Page ${currentPage}: Final Token Count = ${tokens.length} CSS-aligned word tokens`)
 
         setTextItems(tokens)
         setPageLoading(false)
