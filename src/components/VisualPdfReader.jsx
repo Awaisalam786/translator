@@ -116,12 +116,23 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         const page = await pdfDoc.getPage(currentPage)
         if (cancelled) return
 
-        const viewport = page.getViewport({ scale: effectiveScale })
+        // Account for high-DPI Retina mobile screens (devicePixelRatio)
+        const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5)) // Cap at 2.5x to balance crispness vs mobile memory
+        const renderScale = effectiveScale * dpr
+
+        const viewport = page.getViewport({ scale: renderScale })
         const canvas = canvasRef.current
         if (!canvas) return
 
+        // Set internal canvas resolution to high-DPI buffer
         canvas.width = Math.floor(viewport.width)
         canvas.height = Math.floor(viewport.height)
+
+        // Set CSS display dimensions to logical screen size
+        const cssWidth = Math.floor(viewport.width / dpr)
+        const cssHeight = Math.floor(viewport.height / dpr)
+        canvas.style.width = `${cssWidth}px`
+        canvas.style.height = `${cssHeight}px`
 
         const ctx = canvas.getContext('2d')
         ctx.fillStyle = '#ffffff'
@@ -154,7 +165,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
         if (cancelled) return
 
-        logMobileDebug(`[VisualPdfReader] Canvas rendered page ${currentPage} at scale ${effectiveScale.toFixed(2)} (${canvas.width}x${canvas.height}px)`)
+        logMobileDebug(`[VisualPdfReader] Crisp Retina Canvas rendered: Page ${currentPage} [Scale: ${effectiveScale.toFixed(2)}x, DPR: ${dpr}x, Resolution: ${canvas.width}x${canvas.height}px]`)
 
         // Build word-level token hit map for 100% accurate tap-to-translate
         const content = await page.getTextContent()
@@ -170,7 +181,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           const lineY = Math.floor(tx[5] - fh * 0.85)
           const lineH = Math.ceil(fh * 1.25)
           const fullStr = it.str
-          const totalW = Math.ceil(it.width * effectiveScale)
+          const totalW = Math.ceil(it.width * renderScale)
           const charWidth = fullStr.length ? (totalW / fullStr.length) : 8
 
           // Extract individual words with exact word-level bounding boxes
