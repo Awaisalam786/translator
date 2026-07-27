@@ -167,7 +167,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
         logMobileDebug(`[VisualPdfReader] Crisp Retina Canvas rendered: Page ${currentPage} [Scale: ${effectiveScale.toFixed(2)}x, DPR: ${dpr}x, Resolution: ${canvas.width}x${canvas.height}px]`)
 
-        // Build word-level token hit map for 100% accurate tap-to-translate
+        // Build word-level token hit map in CSS Display Logical Pixels (100% accurate 1:1 overlay & tap matching)
         const content = await page.getTextContent()
         if (cancelled) return
 
@@ -176,15 +176,15 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           if (!it.str || !it.str.trim()) continue
 
           const tx = pdfjsLib.Util.transform(viewport.transform, it.transform)
-          const fh = Math.hypot(tx[0], tx[1])
-          const lineX = Math.floor(tx[4])
-          const lineY = Math.floor(tx[5] - fh * 0.85)
+          const fh = Math.hypot(tx[0], tx[1]) / dpr
+          const lineX = Math.floor(tx[4] / dpr)
+          const lineY = Math.floor((tx[5] - (fh * dpr * 0.85)) / dpr)
           const lineH = Math.ceil(fh * 1.25)
           const fullStr = it.str
-          const totalW = Math.ceil(it.width * renderScale)
+          const totalW = Math.ceil(it.width * effectiveScale)
           const charWidth = fullStr.length ? (totalW / fullStr.length) : 8
 
-          // Extract individual words with exact word-level bounding boxes
+          // Extract individual words with exact word-level bounding boxes in CSS pixels
           const regex = /[\wäöüßÄÖÜéàèâêîôûùçœ'-]+/gi
           let match
 
@@ -194,7 +194,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
             if (!cleanWord || cleanWord.length < 2) continue
 
             const startIndex = match.index
-            const wordW = Math.max(14, Math.ceil(rawWord.length * charWidth))
+            const wordW = Math.max(12, Math.ceil(rawWord.length * charWidth))
             const wordX = Math.floor(lineX + (startIndex * charWidth))
 
             tokens.push({
@@ -209,7 +209,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           }
         }
 
-        logMobileDebug(`[VisualPdfReader] Page ${currentPage}: Extracted ${content.items.length} raw text items, built ${tokens.length} word tokens`)
+        logMobileDebug(`[VisualPdfReader] Page ${currentPage}: Extracted ${content.items.length} raw text items, built ${tokens.length} CSS-aligned word tokens`)
         if (tokens.length === 0) {
           logMobileDebug(`⚠️ [VisualPdfReader] Notice: 0 word tokens extracted on page ${currentPage}. PDF might be a scanned image or non-standard font encoding.`)
         }
@@ -235,6 +235,13 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     }
   }, [pdfDoc, currentPage, effectiveScale])
 
+  const [selectedWordToken, setSelectedWordToken] = useState(null)
+
+  // Clear active word highlight when page changes
+  useEffect(() => {
+    setSelectedWordToken(null)
+  }, [currentPage])
+
   // ── Mobile Touch & Click Tap-to-Translate Handler ──────────────────────────────
   const handleTapOnPage = useCallback((clientX, clientY) => {
     const canvas = canvasRef.current
@@ -247,33 +254,24 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
       return
     }
 
-    // 1. Calculate raw tap offset in CSS DOM display space
+    // Calculate tap offset in CSS DOM display space
     const domX = clientX - rect.left
     const domY = clientY - rect.top
 
-    // 2. Convert DOM display coordinates to Canvas Buffer coordinate space
-    const scaleX = canvas.width / rect.width
-    const scaleY = canvas.height / rect.height
-
-    const canvasX = domX * scaleX
-    const canvasY = domY * scaleY
-
-    logMobileDebug(`[VisualPdfReader] Tap DOM (${Math.round(domX)}, ${Math.round(domY)}) -> Canvas (${Math.round(canvasX)}, ${Math.round(canvasY)}) [DPI Scale: ${scaleX.toFixed(2)}x]`)
-
     let exactMatch = null
     let closestMatch = null
-    let minDistance = 60 * scaleX // Search radius scaled to canvas buffer space
+    let minDistance = 35 // 35px CSS search radius
 
     for (const token of textItems) {
-      const padY = 12 * scaleY
-      const padX = 12 * scaleX
-      if (canvasX >= (token.x - padX) && canvasX <= (token.x + token.w + padX) &&
-          canvasY >= (token.y - padY) && canvasY <= (token.y + token.h + padY)) {
+      const padY = 5
+      const padX = 5
+      if (domX >= (token.x - padX) && domX <= (token.x + token.w + padX) &&
+          domY >= (token.y - padY) && domY <= (token.y + token.h + padY)) {
         exactMatch = token
         break
       }
 
-      const dist = Math.hypot(canvasX - token.cx, canvasY - token.cy)
+      const dist = Math.hypot(domX - token.cx, domY - token.cy)
       if (dist < minDistance) {
         minDistance = dist
         closestMatch = token
@@ -283,18 +281,19 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     const selectedToken = exactMatch || closestMatch
 
     if (selectedToken) {
-      logMobileDebug(`[VisualPdfReader] ✅ Word matched: "${selectedToken.word}"`)
+      logMobileDebug(`[VisualPdfReader] ✅ Word matched: "${selectedToken.word}" (CSS W: ${selectedToken.w}px, H: ${selectedToken.h}px)`)
+      setSelectedWordToken(selectedToken)
       const clickRect = {
-        left: Math.max(12, clientX - 20),
-        top: clientY - 10,
-        bottom: clientY + 14,
-        right: clientX + 20,
-        width: selectedToken.w || 40,
-        height: selectedToken.h || 20
+        left: rect.left + selectedToken.x,
+        top: rect.top + selectedToken.y,
+        bottom: rect.top + selectedToken.y + selectedToken.h,
+        right: rect.left + selectedToken.x + selectedToken.w,
+        width: selectedToken.w,
+        height: selectedToken.h
       }
       onSelectWord(selectedToken.word, clickRect)
     } else {
-      logMobileDebug(`[VisualPdfReader] Tap at Canvas (${Math.round(canvasX)}, ${Math.round(canvasY)}) did not match any nearby word token.`)
+      logMobileDebug(`[VisualPdfReader] Tap at DOM (${Math.round(domX)}, ${Math.round(domY)}) did not match any nearby word token.`)
     }
   }, [textItems, currentPage, onSelectWord])
 
@@ -456,13 +455,32 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
                 overflow: 'hidden'
               }}
             >
+              {/* Active Tapped Word Highlight Box */}
+              {selectedWordToken && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${selectedWordToken.x}px`,
+                    top: `${selectedWordToken.y}px`,
+                    width: `${selectedWordToken.w}px`,
+                    height: `${selectedWordToken.h}px`,
+                    backgroundColor: 'rgba(245, 158, 11, 0.38)',
+                    border: '1.5px solid #f59e0b',
+                    borderRadius: '3px',
+                    boxShadow: '0 0 10px rgba(245, 158, 11, 0.5)',
+                    pointerEvents: 'none',
+                    zIndex: 10,
+                    transition: 'all 0.15s ease-out'
+                  }}
+                />
+              )}
+
               {textItems.map((token, idx) => (
                 <span
                   key={`${token.word}_${idx}`}
                   onClick={(e) => {
                     e.stopPropagation()
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    onSelectWord(token.word, rect)
+                    handleTapOnPage(e.clientX, e.clientY)
                   }}
                   style={{
                     position: 'absolute',
