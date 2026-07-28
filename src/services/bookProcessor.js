@@ -164,16 +164,35 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
     let thumbnail = null
 
     try {
-      const loadingTask = pdfjsLib.getDocument({
-        data: arrayBuffer.slice(0),
-        cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
-        cMapPacked: true,
-        standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
-        disableStream: true,
-        disableAutoFetch: false,
-        disableFontFace: false
-      })
-      const pdfDoc = await loadingTask.promise
+      let pdfDoc = null
+      try {
+        const loadingTask = pdfjsLib.getDocument({
+          data: arrayBuffer.slice(0),
+          cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
+          cMapPacked: true,
+          standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
+          disableStream: true,
+          disableAutoFetch: false,
+          disableFontFace: false
+        })
+
+        // Timeout fallback for older desktop browsers (e.g. Windows 7 / Chrome CORS WebWorker block)
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Worker initialization timeout')), 2800)
+        )
+
+        pdfDoc = await Promise.race([loadingTask.promise, timeoutPromise])
+      } catch (workerErr) {
+        logMobileDebug(`⚠️ [BookProcessor] Worker timeout/error: ${workerErr.message}. Retrying in Main-Thread FakeWorker mode...`)
+        const fallbackTask = pdfjsLib.getDocument({
+          data: arrayBuffer.slice(0),
+          disableWorker: true,
+          disableStream: true,
+          disableAutoFetch: false
+        })
+        pdfDoc = await fallbackTask.promise
+      }
+
       totalPages = pdfDoc.numPages || 1
       logMobileDebug('[BookProcessor] PDF.js parsed document!', { totalPages })
 

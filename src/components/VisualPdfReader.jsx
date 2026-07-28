@@ -45,29 +45,49 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
       bufferCopy = fileBuffer
     }
 
-    const loadingTask = pdfjsLib.getDocument({
-      data: bufferCopy,
-      cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
-      cMapPacked: true,
-      standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
-      disableStream: true,
-      disableAutoFetch: false,
-      disableFontFace: false,
-      isEvalSupported: false
-    })
+    const loadPdfDoc = async () => {
+      try {
+        let pdf = null
+        try {
+          const loadingTask = pdfjsLib.getDocument({
+            data: bufferCopy,
+            cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
+            cMapPacked: true,
+            standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
+            disableStream: true,
+            disableAutoFetch: false,
+            disableFontFace: false,
+            isEvalSupported: false
+          })
 
-    loadingTask.promise
-      .then(pdf => {
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Worker initialization timeout')), 2800)
+          )
+
+          pdf = await Promise.race([loadingTask.promise, timeoutPromise])
+        } catch (wErr) {
+          logMobileDebug(`⚠️ [VisualPdfReader] Worker timeout/error: ${wErr.message}. Retrying in Main-Thread FakeWorker mode...`)
+          const fallbackTask = pdfjsLib.getDocument({
+            data: bufferCopy,
+            disableWorker: true,
+            disableStream: true,
+            disableAutoFetch: false
+          })
+          pdf = await fallbackTask.promise
+        }
+
         logMobileDebug(`[VisualPdfReader] PDF document loaded successfully! Total pages: ${pdf.numPages}`)
         setPdfDoc(pdf)
         setLoading(false)
-      })
-      .catch(err => {
+      } catch (err) {
         console.error('[VisualPdfReader] Document loading failed:', err)
         logMobileDebug(`❌ [VisualPdfReader] PDF loading error: ${err.message}`)
         setPdfError(err.message || 'Could not parse PDF file format. The file may be corrupt or encrypted.')
         setLoading(false)
-      })
+      }
+    }
+
+    loadPdfDoc()
   }, [fileBuffer])
 
   // ── Recalculate Fit Width and Fit Page Scales ──────────────────────────────
