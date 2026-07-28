@@ -3,12 +3,9 @@ import * as pdfjsLib from 'pdfjs-dist'
 import { ZoomIn, ZoomOut, Loader2, Maximize2, Minimize2, AlertTriangle, RefreshCw } from 'lucide-react'
 import { logMobileDebug } from './DebugOverlay'
 
-// Set up PDF.js worker CDN URL with fallback handling
-try {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
-} catch (e) {
-  console.warn('[PDF.js] Worker setup notice:', e)
-}
+// Set up PDF.js worker CDN URL with reliable unpkg fallback handling
+const PDFJS_VERSION = pdfjsLib.version || '4.10.38'
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`
 
 export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectWord }) {
   const canvasRef = useRef(null)
@@ -50,9 +47,9 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
     const loadingTask = pdfjsLib.getDocument({
       data: bufferCopy,
-      cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
+      cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
       cMapPacked: true,
-      standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
+      standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
       disableStream: true,
       disableAutoFetch: false,
       disableFontFace: false,

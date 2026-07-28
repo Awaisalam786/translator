@@ -4,7 +4,8 @@ import { detectLanguage } from './languageDetector'
 import { saveLargeData } from './storageService'
 import { logMobileDebug } from '../components/DebugOverlay'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+const PDFJS_VERSION = pdfjsLib.version || '4.10.38'
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`
 
 /**
  * Cross-browser FileReader helpers for mobile WebViews / iOS Safari / Android Chrome
@@ -165,9 +166,9 @@ export async function processBookUpload({ files, isPhotosMode = false, onProgres
     try {
       const loadingTask = pdfjsLib.getDocument({
         data: arrayBuffer.slice(0),
-        cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
+        cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
         cMapPacked: true,
-        standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
+        standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
         disableStream: true,
         disableAutoFetch: false,
         disableFontFace: false
