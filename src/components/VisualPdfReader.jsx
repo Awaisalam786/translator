@@ -576,6 +576,9 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         ) : (
           <div
             ref={containerRef}
+            onPointerDown={(e) => {
+              handleTapOnPage(e.clientX, e.clientY)
+            }}
             onClick={handleClick}
             style={{
               position: 'relative',
@@ -587,7 +590,8 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
               overflow: 'hidden',
               opacity: pageLoading ? 0.6 : 1,
               transition: 'opacity 0.15s ease',
-              margin: '0 auto'
+              margin: '0 auto',
+              touchAction: 'manipulation'
             }}
           >
           <canvas ref={canvasRef} style={{ display: 'block', width: containerSize.w > 0 ? `${containerSize.w}px` : 'auto', height: containerSize.h > 0 ? `${containerSize.h}px` : 'auto' }} />
@@ -626,6 +630,10 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
               {textItems.map((token, idx) => (
                 <span
                   key={`${token.word}_${idx}`}
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    handleTapOnPage(e.clientX, e.clientY)
+                  }}
                   onClick={(e) => {
                     e.stopPropagation()
                     handleTapOnPage(e.clientX, e.clientY)
@@ -637,7 +645,10 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
                     width: `${token.w}px`,
                     height: `${token.h}px`,
                     pointerEvents: 'auto',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    touchAction: 'manipulation',
+                    WebkitUserSelect: 'none',
+                    userSelect: 'none'
                   }}
                   className="pdf-word-span"
                   title={token.word}
