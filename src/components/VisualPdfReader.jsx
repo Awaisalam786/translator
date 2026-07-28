@@ -72,21 +72,29 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
   // ── Recalculate Fit Width and Fit Page Scales ──────────────────────────────
   const updateScales = useCallback(() => {
-    if (!pdfDoc || !wrapperRef.current) return
+    if (!pdfDoc) return
     pdfDoc.getPage(currentPage || 1).then(page => {
       const vp = page.getViewport({ scale: 1 })
       const wrapperEl = wrapperRef.current
-      if (!wrapperEl) return
+      const clientW = wrapperEl ? wrapperEl.clientWidth : (window.innerWidth || 360)
+      const clientH = wrapperEl ? wrapperEl.clientHeight : (window.innerHeight || 640)
 
-      const availW = Math.max(300, wrapperEl.clientWidth - 40)
-      const availH = Math.max(400, wrapperEl.clientHeight - 40)
+      const availW = Math.max(280, clientW - 24)
+      const availH = Math.max(380, clientH - 24)
 
-      const fitW = availW / vp.width
-      const fitH = availH / vp.height
+      const fitW = (vp.width && vp.width > 0) ? (availW / vp.width) : 1.0
+      const fitH = (vp.height && vp.height > 0) ? (availH / vp.height) : 1.0
 
-      // Cap scale between 0.75 and 1.25 for comfortable reading without giant 200%+ overflow
-      setAutoScaleW(Math.max(0.75, Math.min(fitW, 1.25)))
-      setAutoScaleP(Math.max(0.6, Math.min(fitW, fitH, 1.15)))
+      // Calculate perfect fit width scale for mobile and desktop without artificial 0.75 floor
+      const calculatedFitW = Math.max(0.25, Math.min(fitW, 2.0))
+      const calculatedFitP = Math.max(0.2, Math.min(fitW, fitH, 1.8))
+
+      setAutoScaleW(calculatedFitW)
+      setAutoScaleP(calculatedFitP)
+    }).catch(e => {
+      console.warn('[VisualPdfReader] Page viewport error:', e)
+      setAutoScaleW(1.0)
+      setAutoScaleP(1.0)
     })
   }, [pdfDoc, currentPage])
 
@@ -379,31 +387,58 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     const domX = clientX - rect.left
     const domY = clientY - rect.top
 
-    // Strict Bounding Box Containment with tight 4px tolerance (no broad radial matching)
-    let strictMatch = null
-    const padX = 4
-    const padY = 4
+    // Pass 1: Bounding Box Containment (8px finger touch padding)
+    let matchedToken = null
+    const padX = 8
+    const padY = 6
 
     for (const token of textItems) {
       if (domX >= (token.x - padX) && domX <= (token.x + token.w + padX) &&
           domY >= (token.y - padY) && domY <= (token.y + token.h + padY)) {
-        strictMatch = token
+        matchedToken = token
         break
       }
     }
 
-    if (strictMatch) {
-      logMobileDebug(`[VisualPdfReader] ✅ Exact Word Hit: "${strictMatch.word}" (x:${strictMatch.x}, y:${strictMatch.y}, w:${strictMatch.w})`)
-      setSelectedWordToken(strictMatch)
-      const clickRect = {
-        left: rect.left + strictMatch.x,
-        top: rect.top + strictMatch.y,
-        bottom: rect.top + strictMatch.y + strictMatch.h,
-        right: rect.left + strictMatch.x + strictMatch.w,
-        width: strictMatch.w,
-        height: strictMatch.h
+    // Pass 2: Same-Row Search (Restricted strictly to the SAME line, 32px max offset)
+    if (!matchedToken) {
+      let minRowXDist = 32
+      for (const token of textItems) {
+        const inSameRow = (domY >= (token.y - 8) && domY <= (token.y + token.h + 8))
+        if (inSameRow) {
+          const xDist = Math.abs(domX - token.cx)
+          if (xDist < minRowXDist) {
+            minRowXDist = xDist
+            matchedToken = token
+          }
+        }
       }
-      onSelectWord(strictMatch.word, clickRect)
+    }
+
+    // Pass 3: Fallback 18px Radius Search
+    if (!matchedToken) {
+      let minFallbackDist = 18
+      for (const token of textItems) {
+        const dist = Math.hypot(domX - token.cx, domY - token.cy)
+        if (dist < minFallbackDist) {
+          minFallbackDist = dist
+          matchedToken = token
+        }
+      }
+    }
+
+    if (matchedToken) {
+      logMobileDebug(`[VisualPdfReader] ✅ Word Tapped: "${matchedToken.word}" (x:${matchedToken.x}, y:${matchedToken.y}, w:${matchedToken.w})`)
+      setSelectedWordToken(matchedToken)
+      const clickRect = {
+        left: rect.left + matchedToken.x,
+        top: rect.top + matchedToken.y,
+        bottom: rect.top + matchedToken.y + matchedToken.h,
+        right: rect.left + matchedToken.x + matchedToken.w,
+        width: matchedToken.w,
+        height: matchedToken.h
+      }
+      onSelectWord(matchedToken.word, clickRect)
     } else {
       logMobileDebug(`[VisualPdfReader] Tap at (${Math.round(domX)}, ${Math.round(domY)}) missed all word bounding boxes.`)
     }
