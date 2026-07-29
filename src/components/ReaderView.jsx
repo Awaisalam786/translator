@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Globe, Palette, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Globe, Palette, AlertTriangle, HardDrive } from 'lucide-react'
 import { getLargeData, saveBooksMetadata, getBooksMetadata } from '../services/storageService'
 import TranslationSlip from './TranslationSlip'
 import VisualPdfReader from './VisualPdfReader'
+import StorageModal from './StorageModal'
 
 export default function ReaderView({
   book,
@@ -17,6 +18,7 @@ export default function ReaderView({
   const [targetLang, setTargetLang] = useState(() => localStorage.getItem('leselampe_target_lang') || 'en')
   const [bookData, setBookData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [showStorageModal, setShowStorageModal] = useState(false)
 
   // Word Selection & Translation Slip State
   const [selectedWord, setSelectedWord] = useState(null)
@@ -238,6 +240,28 @@ export default function ReaderView({
             </select>
           </div>
 
+          {/* Storage Management Button */}
+          <button
+            onClick={() => setShowStorageModal(true)}
+            title="Storage Management"
+            style={{
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '6px',
+              color: '#f8fafc',
+              padding: '4px 8px',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            <HardDrive size={14} color="#d97706" />
+            <span>Storage</span>
+          </button>
+
           {/* Theme Button */}
           {onOpenTheme && (
             <button
@@ -297,6 +321,20 @@ export default function ReaderView({
           transition: 'width 0.2s ease'
         }} />
       </header>
+
+      {/* Storage Modal */}
+      {showStorageModal && (
+        <StorageModal
+          onClose={() => setShowStorageModal(false)}
+          onBooksChanged={() => {
+            const books = getBooksMetadata()
+            const stillExists = books.some(b => b.id === book.id)
+            if (!stillExists) {
+              onBackToLibrary()
+            }
+          }}
+        />
+      )}
 
       {/* ── Floating Bottom Navigation Pill ── */}
       <div style={{

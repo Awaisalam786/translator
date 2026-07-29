@@ -168,7 +168,39 @@ export function speakWord(word, langCode = 'de') {
   window.speechSynthesis.speak(utterance)
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Translation Cache Management (Safe clear without deleting books/vocab) ──
+
+export function getTranslationCacheCount() {
+  let count = translationCache.size + synonymCache.size
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('leselampe_trans_cache_')) {
+        count++
+      }
+    }
+  } catch (e) {}
+  return count
+}
+
+export function clearTranslationCacheOnly() {
+  translationCache.clear()
+  synonymCache.clear()
+
+  try {
+    const keysToRemove = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('leselampe_trans_cache_')) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k))
+  } catch (e) {}
+
+  logMobileDebug('[TranslationService] ✅ Translation cache cleared successfully. (Books & Vocabulary intact)')
+  return true
+}
 
 function getLocaleCode(langCode) {
   const map = {

@@ -140,8 +140,6 @@ export default function App() {
           onClose={() => setShowThemeModal(false)}
         />
       )}
-      {/* Mobile Diagnostics Overlay */}
-      <DebugOverlay />
     </StudentAuthGate>
   )
 }

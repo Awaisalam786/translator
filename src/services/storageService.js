@@ -137,6 +137,22 @@ function clearChunkedLocalStorage(key) {
   } catch (e) {}
 }
 
+export async function getBookStorageSize(bookId) {
+  try {
+    const data = await getLargeData(`book_blob_${bookId}`)
+    if (!data) return 0
+    if (data instanceof ArrayBuffer) {
+      return data.byteLength
+    }
+    if (typeof data === 'string') {
+      return data.length
+    }
+    return JSON.stringify(data).length
+  } catch (e) {
+    return 0
+  }
+}
+
 // ── Small Metadata Storage (localStorage directly) ────────────────────────────
 
 const BOOKS_KEY = 'leselampe_books'

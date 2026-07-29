@@ -4,6 +4,7 @@ import { BookOpen, Plus, Trash2, HardDrive, AlertTriangle, FileText, Image as Im
 import { getBooksMetadata, deleteBookComplete, getStorageStatus } from '../services/storageService'
 import { processBookUpload } from '../services/bookProcessor'
 import ProfileModal from './ProfileModal'
+import StorageModal from './StorageModal'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ppyaxlytlrjtqdpbtjnk.supabase.co'
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_xfT7EODlWKoMGeJTt7GMHA_qNvN3el-'
@@ -18,6 +19,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
   const [errorMsg, setErrorMsg] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showStorageModal, setShowStorageModal] = useState(false)
   const [localProfile, setLocalProfile] = useState(userProfile)
 
   // Sync userProfile prop updates to localProfile
@@ -242,6 +244,28 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
             </button>
           )}
 
+          {/* Storage Management Button */}
+          <button
+            onClick={() => setShowStorageModal(true)}
+            title="Storage Settings & Quota"
+            style={{
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '24px',
+              color: 'var(--text-bright)',
+              padding: '8px 14px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <HardDrive size={16} color="#d97706" />
+            <span>Storage</span>
+          </button>
+
           {/* Profile Settings Button */}
           <button
             onClick={() => setShowProfileModal(true)}
@@ -337,6 +361,14 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
             return result
           }}
           onClose={() => setShowProfileModal(false)}
+        />
+      )}
+
+      {/* Storage Management Modal */}
+      {showStorageModal && (
+        <StorageModal
+          onClose={() => setShowStorageModal(false)}
+          onBooksChanged={loadLibraryData}
         />
       )}
 
