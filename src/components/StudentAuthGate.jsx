@@ -23,6 +23,7 @@ export default function StudentAuthGate({ children }) {
   // Access State
   const [trialDaysLeft, setTrialDaysLeft] = useState(3)
   const [hasActiveAccess, setHasActiveAccess] = useState(false)
+  const [isPremiumUser, setIsPremiumUser] = useState(false)
   const [checkingAccess, setCheckingAccess] = useState(true)
   const [userProfile, setUserProfile] = useState(null)
 
@@ -149,6 +150,7 @@ export default function StudentAuthGate({ children }) {
       })
 
       const hasLicense = Boolean(validLicense)
+      setIsPremiumUser(hasLicense)
       console.log('[AuthGate] Has Valid Active License?:', hasLicense, '| Valid License Object:', validLicense)
 
       // Access granted if within 3-day trial OR has active license
@@ -702,7 +704,7 @@ export default function StudentAuthGate({ children }) {
         </div>
       )}
       {React.isValidElement(children)
-        ? React.cloneElement(children, { onSignOut: handleSignOut, userProfile, onSaveProfile: handleSaveProfile, onSaveName: handleSaveName })
+        ? React.cloneElement(children, { onSignOut: handleSignOut, userProfile, onSaveProfile: handleSaveProfile, onSaveName: handleSaveName, isPremium: isPremiumUser, trialDaysLeft })
         : children}
     </div>
   )

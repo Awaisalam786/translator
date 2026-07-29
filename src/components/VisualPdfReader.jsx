@@ -32,17 +32,19 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
     console.log('[VisualPdfReader] Loading PDF document buffer of size:', fileBuffer?.byteLength || fileBuffer?.length)
 
-    let bufferCopy = null
-    try {
-      if (fileBuffer instanceof ArrayBuffer) {
-        bufferCopy = fileBuffer.slice(0)
-      } else if (fileBuffer?.buffer instanceof ArrayBuffer) {
-        bufferCopy = fileBuffer.buffer.slice(0)
-      } else {
-        bufferCopy = fileBuffer
-      }
-    } catch (e) {
-      bufferCopy = fileBuffer
+    const getFreshBuffer = () => {
+      try {
+        if (fileBuffer instanceof ArrayBuffer) {
+          return fileBuffer.slice(0)
+        }
+        if (fileBuffer?.buffer instanceof ArrayBuffer) {
+          return fileBuffer.buffer.slice(0)
+        }
+        if (fileBuffer instanceof Uint8Array) {
+          return new Uint8Array(fileBuffer).buffer.slice(0)
+        }
+      } catch (e) {}
+      return fileBuffer
     }
 
     const loadPdfDoc = async () => {
@@ -50,7 +52,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         let pdf = null
         try {
           const loadingTask = pdfjsLib.getDocument({
-            data: bufferCopy,
+            data: getFreshBuffer(),
             cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
             cMapPacked: true,
             standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
@@ -68,7 +70,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         } catch (wErr) {
           logMobileDebug(`⚠️ [VisualPdfReader] Worker timeout/error: ${wErr.message}. Retrying in Main-Thread FakeWorker mode...`)
           const fallbackTask = pdfjsLib.getDocument({
-            data: bufferCopy,
+            data: getFreshBuffer(),
             disableWorker: true,
             disableStream: true,
             disableAutoFetch: false

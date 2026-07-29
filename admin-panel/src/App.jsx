@@ -13,6 +13,7 @@ import {
   fetchSupabaseLicenses, generateSupabaseLicense,
   fetchSupabasePayments, approveSupabasePayment,
   fetchSupabaseAnnouncements, publishSupabaseAnnouncement,
+  fetchSupabaseAnnouncementBar, updateSupabaseAnnouncementBar,
   fetchSupabaseProfiles, deleteUserAccount,
   getSupabaseCredentials, configureSupabase,
   supabaseAdminLogin, supabaseAdminLogout, getSupabaseUser
@@ -58,6 +59,17 @@ export default function App() {
   const [annMessage, setAnnMessage] = useState('')
   const [annVersion, setAnnVersion] = useState('2.1.0')
 
+  const [annBar, setAnnBar] = useState({
+    id: 'default_announcement',
+    message: '🎉 Welcome to LeseLampe! Read German books & tap any word for instant translations.',
+    is_active: true,
+    background_color: '#d97706',
+    text_color: '#ffffff',
+    link_url: '',
+    is_scrolling: false
+  })
+  const [annBarSaveMsg, setAnnBarSaveMsg] = useState('')
+
   useEffect(() => {
     checkSession()
   }, [])
@@ -74,12 +86,13 @@ export default function App() {
   const fetchAllData = async () => {
     setLoading(true)
 
-    const [supSet, supLic, supPay, supAnn, supPro] = await Promise.all([
+    const [supSet, supLic, supPay, supAnn, supPro, supBar] = await Promise.all([
       fetchSupabaseSettings(),
       fetchSupabaseLicenses(),
       fetchSupabasePayments(),
       fetchSupabaseAnnouncements(),
-      fetchSupabaseProfiles()
+      fetchSupabaseProfiles(),
+      fetchSupabaseAnnouncementBar()
     ])
 
     if (supSet) setSettings(supSet)
@@ -87,14 +100,28 @@ export default function App() {
     if (supPay) setPayments(supPay)
     if (supAnn) setAnnouncements(supAnn)
     if (supPro) setUsersList(supPro)
+    if (supBar) setAnnBar(supBar)
 
     setLoading(false)
+  }
+
+  const handleSaveAnnouncementBar = async (e) => {
+    e.preventDefault()
+    setAnnBarSaveMsg('Saving announcement bar...')
+    const res = await updateSupabaseAnnouncementBar(annBar)
+    if (res.success) {
+      setAnnBarSaveMsg('✅ Announcement Bar updated live!')
+      setTimeout(() => setAnnBarSaveMsg(''), 4000)
+    } else {
+      setAnnBarSaveMsg('❌ Error updating announcement bar')
+    }
   }
 
   const handleLogin = async (e) => {
     e.preventDefault()
     setAuthError('')
 
+    // 1. Attempt Supabase Auth login with email & password
     const res = await supabaseAdminLogin(email, password)
     if (res.success) {
       setCurrentUser(res.user)
@@ -103,8 +130,13 @@ export default function App() {
       return
     }
 
-    if (password === 'awaisalam' || email.includes('admin')) {
-      setCurrentUser({ email: email || 'admin@leselampe.com' })
+    // 2. Master Admin override check (allows rs03165162@gmail.com, master password 'awaisalam', or admin emails)
+    if (
+      password === 'awaisalam' || 
+      email.toLowerCase().includes('admin') || 
+      email.toLowerCase() === 'rs03165162@gmail.com'
+    ) {
+      setCurrentUser({ email: email || 'rs03165162@gmail.com' })
       setAuthenticated(true)
       fetchAllData()
       return
@@ -731,8 +763,245 @@ export default function App() {
 
         {activeTab === 'announcements' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* ── Production Announcement Ticker Control Panel ────────────── */}
+            <form onSubmit={handleSaveAnnouncementBar} style={{ backgroundColor: '#1a1d2e', borderRadius: '14px', padding: '24px', border: '1px solid rgba(217,119,6,0.3)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Megaphone size={18} color="#d97706" />
+                  <span>Production Announcement Ticker Settings</span>
+                </h3>
+
+                {/* Enabled ON/OFF Switch */}
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={annBar.enabled !== undefined ? annBar.enabled : annBar.is_active}
+                    onChange={(e) => setAnnBar({ ...annBar, enabled: e.target.checked, is_active: e.target.checked })}
+                    style={{ width: '18px', height: '18px', accentColor: '#10b981', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '0.88rem', fontWeight: 700, color: (annBar.enabled !== undefined ? annBar.enabled : annBar.is_active) ? '#10b981' : '#ef4444' }}>
+                    {(annBar.enabled !== undefined ? annBar.enabled : annBar.is_active) ? 'Ticker Enabled (ON)' : 'Ticker Disabled (OFF)'}
+                  </span>
+                </label>
+              </div>
+
+              {/* Announcement Text */}
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Announcement Text</label>
+                <textarea
+                  rows={2}
+                  placeholder="Enter message to scroll across top ticker..."
+                  value={annBar.announcement_text || annBar.message || ''}
+                  onChange={(e) => setAnnBar({ ...annBar, announcement_text: e.target.value, message: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none', resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Icon Selection & Options */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                {/* Icon Picker */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Icon Picker</label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {['📢', '🔔', '⭐', '🔥', '🎉'].map((iconEmoji) => (
+                      <button
+                        key={iconEmoji}
+                        type="button"
+                        onClick={() => setAnnBar({ ...annBar, icon: iconEmoji, show_icon: true })}
+                        style={{
+                          fontSize: '1.1rem',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          border: (annBar.icon === iconEmoji && annBar.show_icon) ? '2px solid #d97706' : '1px solid rgba(255,255,255,0.15)',
+                          backgroundColor: (annBar.icon === iconEmoji && annBar.show_icon) ? 'rgba(217,119,6,0.2)' : '#12151e',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                      >
+                        {iconEmoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Show Icon Toggle */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Show Icon</label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '6px' }}>
+                    <input
+                      type="checkbox"
+                      checked={annBar.show_icon !== undefined ? annBar.show_icon : true}
+                      onChange={(e) => setAnnBar({ ...annBar, show_icon: e.target.checked })}
+                      style={{ width: '16px', height: '16px', accentColor: '#38bdf8', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '0.85rem', color: '#e2e8f0' }}>Display Icon Before Text</span>
+                  </label>
+                </div>
+
+                {/* Pause On Hover */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Pause On Hover</label>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '6px' }}>
+                    <input
+                      type="checkbox"
+                      checked={annBar.pause_on_hover !== undefined ? annBar.pause_on_hover : true}
+                      onChange={(e) => setAnnBar({ ...annBar, pause_on_hover: e.target.checked })}
+                      style={{ width: '16px', height: '16px', accentColor: '#38bdf8', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '0.85rem', color: '#e2e8f0' }}>Pause Scroll on Mouse Hover</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Speed & Typography Controls */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                {/* Scrolling Speed */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Scrolling Speed</label>
+                  <select
+                    value={annBar.speed || 'normal'}
+                    onChange={(e) => setAnnBar({ ...annBar, speed: e.target.value })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}
+                  >
+                    <option value="very_slow">Very Slow (32s)</option>
+                    <option value="slow">Slow (22s)</option>
+                    <option value="normal">Normal (15s)</option>
+                    <option value="fast">Fast (10s)</option>
+                    <option value="very_fast">Very Fast (6s)</option>
+                  </select>
+                </div>
+
+                {/* Font Size */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Font Size</label>
+                  <select
+                    value={annBar.font_size || '14px'}
+                    onChange={(e) => setAnnBar({ ...annBar, font_size: e.target.value })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}
+                  >
+                    <option value="12px">12px (Small)</option>
+                    <option value="14px">14px (Standard)</option>
+                    <option value="16px">16px (Medium)</option>
+                    <option value="18px">18px (Large)</option>
+                  </select>
+                </div>
+
+                {/* Font Weight */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Font Weight</label>
+                  <select
+                    value={annBar.font_weight || '600'}
+                    onChange={(e) => setAnnBar({ ...annBar, font_weight: e.target.value })}
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}
+                  >
+                    <option value="400">400 (Normal)</option>
+                    <option value="600">600 (Semi-Bold)</option>
+                    <option value="700">700 (Bold)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Color Pickers */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                {/* Background Color Picker */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Background Color</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="color"
+                      value={annBar.background_color || '#d97706'}
+                      onChange={(e) => setAnnBar({ ...annBar, background_color: e.target.value })}
+                      style={{ width: '40px', height: '38px', padding: '0', borderRadius: '6px', border: 'none', cursor: 'pointer', backgroundColor: 'transparent' }}
+                    />
+                    <input
+                      type="text"
+                      value={annBar.background_color || '#d97706'}
+                      onChange={(e) => setAnnBar({ ...annBar, background_color: e.target.value })}
+                      style={{ flex: 1, padding: '8px', borderRadius: '6px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Text Color Picker */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Text Color</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="color"
+                      value={annBar.text_color || '#ffffff'}
+                      onChange={(e) => setAnnBar({ ...annBar, text_color: e.target.value })}
+                      style={{ width: '40px', height: '38px', padding: '0', borderRadius: '6px', border: 'none', cursor: 'pointer', backgroundColor: 'transparent' }}
+                    />
+                    <input
+                      type="text"
+                      value={annBar.text_color || '#ffffff'}
+                      onChange={(e) => setAnnBar({ ...annBar, text_color: e.target.value })}
+                      style={{ flex: 1, padding: '8px', borderRadius: '6px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: '0.85rem' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Optional Link URL */}
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Optional Link URL (e.g. https://example.com)</label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={annBar.link_url || ''}
+                  onChange={(e) => setAnnBar({ ...annBar, link_url: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', backgroundColor: '#12151e', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}
+                />
+              </div>
+
+              {/* Interactive Live Preview Box */}
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Interactive Ticker Preview:</label>
+                <div style={{
+                  backgroundColor: annBar.background_color || '#d97706',
+                  color: annBar.text_color || '#ffffff',
+                  fontSize: annBar.font_size || '14px',
+                  fontWeight: annBar.font_weight || '600',
+                  height: '38px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  overflow: 'hidden',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  position: 'relative'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '0 16px',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {(annBar.show_icon !== false && annBar.icon) && (
+                      <span>{annBar.icon}</span>
+                    )}
+                    <span>{annBar.announcement_text || annBar.message || 'Announcement Message Preview'}</span>
+                    {annBar.link_url && <span>🔗</span>}
+                  </div>
+                </div>
+              </div>
+
+              {annBarSaveMsg && <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#10b981' }}>{annBarSaveMsg}</div>}
+
+              <button
+                type="submit"
+                style={{
+                  width: '260px', padding: '12px', borderRadius: '8px', border: 'none',
+                  backgroundColor: '#d97706', color: '#fff', fontWeight: 700, cursor: 'pointer',
+                  fontSize: '0.9rem', boxShadow: '0 4px 12px rgba(217,119,6,0.3)'
+                }}
+              >
+                Save & Update Ticker Live
+              </button>
+            </form>
+
             <form onSubmit={handlePublishAnnouncement} style={{ backgroundColor: '#1a1d2e', borderRadius: '14px', padding: '24px', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <h3 style={{ margin: 0, fontSize: '1rem', color: '#f8fafc' }}>Broadcast Update or Announcement</h3>
+              <h3 style={{ margin: 0, fontSize: '1rem', color: '#f8fafc' }}>Broadcast Update or Release Notice</h3>
 
               <div>
                 <label style={{ fontSize: '0.8rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Announcement Title</label>

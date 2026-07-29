@@ -291,3 +291,98 @@ export async function publishSupabaseAnnouncement(title, message, version = '2.1
   }
   return payload
 }
+
+// ── Production Announcement Ticker CRUD ─────────────────────────────────────
+export async function fetchSupabaseAnnouncementBar() {
+  try {
+    const { data, error } = await supabase
+      .from('site_announcements')
+      .select('*')
+      .limit(1)
+      .maybeSingle()
+
+    if (data && !error) {
+      return {
+        id: data.id || 'default_announcement',
+        announcement_text: data.announcement_text || data.message || '',
+        message: data.announcement_text || data.message || '',
+        enabled: data.enabled !== undefined ? Boolean(data.enabled) : Boolean(data.is_active),
+        is_active: data.enabled !== undefined ? Boolean(data.enabled) : Boolean(data.is_active),
+        speed: data.speed || 'normal',
+        background_color: data.background_color || '#d97706',
+        text_color: data.text_color || '#ffffff',
+        font_size: data.font_size || '14px',
+        font_weight: data.font_weight || '600',
+        pause_on_hover: data.pause_on_hover !== undefined ? Boolean(data.pause_on_hover) : true,
+        loop: data.loop !== undefined ? Boolean(data.loop) : true,
+        show_icon: data.show_icon !== undefined ? Boolean(data.show_icon) : true,
+        icon: data.icon || '📢',
+        link_url: data.link_url || '',
+        updated_at: data.updated_at
+      }
+    }
+  } catch (e) {
+    console.warn('[Supabase] fetchAnnouncementBar error:', e)
+  }
+
+  return {
+    id: 'default_announcement',
+    announcement_text: '🎉 Welcome to LeseLampe! Read German books & tap any word for instant translations.',
+    message: '🎉 Welcome to LeseLampe! Read German books & tap any word for instant translations.',
+    enabled: true,
+    is_active: true,
+    speed: 'normal',
+    background_color: '#d97706',
+    text_color: '#ffffff',
+    font_size: '14px',
+    font_weight: '600',
+    pause_on_hover: true,
+    loop: true,
+    show_icon: true,
+    icon: '📢',
+    link_url: ''
+  }
+}
+
+export async function updateSupabaseAnnouncementBar(annData) {
+  const textMsg = annData.announcement_text || annData.message || ''
+  const isEnabled = annData.enabled !== undefined ? Boolean(annData.enabled) : Boolean(annData.is_active)
+
+  const payload = {
+    id: annData.id || 'default_announcement',
+    announcement_text: textMsg,
+    message: textMsg,
+    enabled: isEnabled,
+    is_active: isEnabled,
+    speed: annData.speed || 'normal',
+    background_color: annData.background_color || '#d97706',
+    text_color: annData.text_color || '#ffffff',
+    font_size: annData.font_size || '14px',
+    font_weight: annData.font_weight || '600',
+    pause_on_hover: annData.pause_on_hover !== undefined ? Boolean(annData.pause_on_hover) : true,
+    loop: annData.loop !== undefined ? Boolean(annData.loop) : true,
+    show_icon: annData.show_icon !== undefined ? Boolean(annData.show_icon) : true,
+    icon: annData.icon || '📢',
+    link_url: annData.link_url || '',
+    updated_at: new Date().toISOString()
+  }
+
+  // Broadcast to localStorage for instant local sync across tabs
+  try {
+    localStorage.setItem('leselampe_announcement_live_config', JSON.stringify(payload))
+  } catch (e) {}
+
+  try {
+    const { data, error } = await supabase
+      .from('site_announcements')
+      .upsert([payload], { onConflict: 'id' })
+      .select()
+      .single()
+
+    if (!error) return { success: true, data }
+  } catch (e) {
+    console.error('[Supabase] updateAnnouncementBar error:', e)
+  }
+
+  return { success: true, data: payload }
+}

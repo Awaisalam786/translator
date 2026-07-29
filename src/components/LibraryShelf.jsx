@@ -424,11 +424,7 @@ export default function LibraryShelf({ onSelectBook, onOpenDeck, onOpenAdminPane
         </div>
 
         {/* Bookshelf Grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-          gap: '24px'
-        }}>
+        <div className="books-shelf-grid">
           {/* ── Upload Book File Card ────────────────────────────────────────── */}
           <div
             onDragOver={handleDragOver}

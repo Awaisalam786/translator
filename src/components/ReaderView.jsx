@@ -339,7 +339,7 @@ export default function ReaderView({
       {/* ── Floating Bottom Navigation Pill ── */}
       <div style={{
         position: 'fixed',
-        bottom: '20px',
+        bottom: 'calc(20px + var(--sab))',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 100,

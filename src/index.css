@@ -1,18 +1,26 @@
-/* Global Styles & Design System for Leselampe */
+/* Global Styles & Mobile-First Design System for LeseLampe */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Georgia&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap');
 
 :root {
   --bg-dark: #0f121d;
-  --bg-card: #1a1d2e;
-  --bg-paper: #1e2230;
-  --accent-gold: #d97706;
-  --accent-gold-hover: #b45309;
-  --text-main: #e2e8f0;
-  --text-bright: #f8fafc;
+  --bg-card: #161926;
+  --bg-paper: #1c2030;
+  --accent-gold: #f59e0b;
+  --accent-gold-hover: #d97706;
+  --accent-yellow: #f59e0b;
+  --accent-red: #ef4444;
+  --text-main: #f1f5f9;
+  --text-bright: #ffffff;
   --text-muted: #94a3b8;
   --border-subtle: rgba(255, 255, 255, 0.08);
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-serif: 'Merriweather', 'Georgia', serif;
+
+  /* Safe Area Insets for iPhone / Android Notches & Dynamic Island */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 }
 
 /* ── Theme Definitions ─────────────────────────────────────────────────────── */
@@ -54,23 +62,55 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
-html, body, #root {
+html {
+  overflow-x: hidden;
+  width: 100vw;
+  scroll-behavior: smooth;
+}
+
+body {
   margin: 0;
   padding: 0;
   width: 100%;
-  height: 100%;
+  min-height: 100vh;
   background-color: var(--bg-dark);
   color: var(--text-main);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
+
+/* Touch & Button Micro-Animations */
+button, a {
+  touch-action: manipulation;
+}
+
+button:active, .mobile-btn-active:active {
+  transform: scale(0.97);
+  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Accessible Focus Ring */
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent-gold);
+  outline-offset: 2px;
 }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: var(--bg-dark);
@@ -83,22 +123,31 @@ html, body, #root {
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* Book Spine Card Hover Effects */
+/* Mobile-First Book Spine Card */
 .book-spine-card {
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.book-spine-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5) !important;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 44px;
 }
 
-/* Hide spine delete button by default, show on hover */
+@media (hover: hover) and (pointer: fine) {
+  .book-spine-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5) !important;
+  }
+}
+
+/* Always accessible delete button on touch, hover on desktop */
 .delete-spine-btn {
-  opacity: 0;
+  opacity: 0.85;
   transition: opacity 0.15s ease;
 }
-.book-spine-card:hover .delete-spine-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .delete-spine-btn {
+    opacity: 0;
+  }
+  .book-spine-card:hover .delete-spine-btn {
+    opacity: 1;
+  }
 }
 
 /* Tappable Words */
@@ -118,12 +167,14 @@ html, body, #root {
 .nav-btn {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text-bright);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
   transition: background-color 0.15s ease;
 }
 .nav-btn:hover:not(:disabled) {
@@ -143,5 +194,29 @@ html, body, #root {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* Fade In Animation */
+.fade-in {
+  animation: fadeIn 0.25s ease-in-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Mobile Responsive Grid System */
+.books-shelf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 640px) {
+  .books-shelf-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
   }
 }

@@ -16,13 +16,14 @@ import LibraryShelf from './components/LibraryShelf'
 import ReaderView from './components/ReaderView'
 import VocabularyModal from './components/VocabularyModal'
 import ThemeSettingsModal from './components/ThemeSettingsModal'
+import AnnouncementTicker from './components/AnnouncementTicker'
 import DebugOverlay from './components/DebugOverlay'
 import { initStorage } from './services/storageService'
 
 const DECK_STORAGE_KEY = 'leselampe_deck'
 const THEME_STORAGE_KEY = 'leselampe_theme'
 
-export default function App() {
+export default function App({ isPremium = false }) {
   const [activeBook, setActiveBook] = useState(null)
   const [showDeckModal, setShowDeckModal] = useState(false)
   const [showThemeModal, setShowThemeModal] = useState(false)
@@ -104,6 +105,7 @@ export default function App() {
 
   return (
     <StudentAuthGate>
+      <AnnouncementTicker isReaderView={activeBook !== null} isPremium={isPremium} />
       {activeBook === null ? (
         <LibraryShelf
           onSelectBook={(book) => setActiveBook(book)}
