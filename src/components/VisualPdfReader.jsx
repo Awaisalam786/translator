@@ -77,7 +77,7 @@ export default function VisualPdfReader({
         standardFontDataUrl: `${origin}/standard_fonts/`,
         disableStream: true,
         disableAutoFetch: false,
-        isEvalSupported: false
+        isEvalSupported: true
       }
 
       try {
@@ -85,7 +85,7 @@ export default function VisualPdfReader({
         try {
           const loadingTask = pdfjsLib.getDocument(docParams)
           const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Worker initialization timeout')), 3000)
+            setTimeout(() => reject(new Error('Worker initialization timeout')), 30000)
           )
           pdf = await Promise.race([loadingTask.promise, timeoutPromise])
         } catch (wErr) {
@@ -94,7 +94,8 @@ export default function VisualPdfReader({
           const fallbackTask = pdfjsLib.getDocument({
             ...docParams,
             data: getFreshBuffer(),
-            disableWorker: true
+            disableWorker: true,
+            isEvalSupported: true
           })
           pdf = await fallbackTask.promise
         }
@@ -489,14 +490,23 @@ export default function VisualPdfReader({
         justifyContent: 'center',
         flexWrap: 'wrap',
         gap: '8px',
-        padding: '6px 14px',
-        backgroundColor: 'var(--bg-card)',
-        borderBottom: '1px solid var(--border-subtle)',
+        padding: '0 16px',
+        height: '42px',
+        backgroundColor: '#161922',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
         zIndex: 10,
-        transition: 'background-color 0.25s ease'
+        transition: 'background-color 0.15s ease'
       }}>
-        {/* Zoom Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        {/* Segmented Zoom Controls */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          backgroundColor: 'rgba(0, 0, 0, 0.25)',
+          borderRadius: '6px',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          padding: '2px',
+          gap: '2px'
+        }}>
           <button
             onClick={() => {
               setScaleMode('custom')
@@ -504,15 +514,23 @@ export default function VisualPdfReader({
             }}
             title="Zoom Out"
             style={{
-              background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)',
-              borderRadius: '6px', color: 'var(--text-bright)', padding: '6px 10px', cursor: 'pointer',
-              minHeight: '36px', minWidth: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              color: '#94a3b8',
+              width: '28px',
+              height: '28px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.15s ease'
             }}
           >
-            <ZoomOut size={15} />
+            <ZoomOut size={14} />
           </button>
 
-          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-bright)', minWidth: '48px', textAlign: 'center' }}>
+          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#f8fafc', minWidth: '44px', textAlign: 'center' }}>
             {Math.round(effectiveScale * 100)}%
           </span>
 
@@ -523,30 +541,47 @@ export default function VisualPdfReader({
             }}
             title="Zoom In"
             style={{
-              background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)',
-              borderRadius: '6px', color: 'var(--text-bright)', padding: '6px 10px', cursor: 'pointer',
-              minHeight: '36px', minWidth: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+              background: 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              color: '#94a3b8',
+              width: '28px',
+              height: '28px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.15s ease'
             }}
           >
-            <ZoomIn size={15} />
+            <ZoomIn size={14} />
           </button>
         </div>
 
         {/* Fit Modes */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <button
             onClick={() => {
               setScaleMode('width')
               setCustomScale(null)
             }}
             style={{
-              background: scaleMode === 'width' ? 'var(--accent-gold)' : 'rgba(255,255,255,0.06)',
-              border: 'none', borderRadius: '6px', color: '#ffffff',
-              padding: '6px 12px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '4px', minHeight: '36px'
+              background: scaleMode === 'width' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+              border: scaleMode === 'width' ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '6px',
+              color: scaleMode === 'width' ? '#60a5fa' : '#94a3b8',
+              padding: '0 10px',
+              height: '28px',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              transition: 'all 0.15s ease'
             }}
           >
-            <Maximize2 size={13} />
+            <Maximize2 size={12} />
             <span>Fit Width</span>
           </button>
 
@@ -556,38 +591,47 @@ export default function VisualPdfReader({
               setCustomScale(null)
             }}
             style={{
-              background: scaleMode === 'page' ? 'var(--accent-gold)' : 'rgba(255,255,255,0.06)',
-              border: 'none', borderRadius: '6px', color: '#ffffff',
-              padding: '6px 12px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: '4px', minHeight: '36px'
+              background: scaleMode === 'page' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+              border: scaleMode === 'page' ? '1px solid rgba(59, 130, 246, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '6px',
+              color: scaleMode === 'page' ? '#60a5fa' : '#94a3b8',
+              padding: '0 10px',
+              height: '28px',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              transition: 'all 0.15s ease'
             }}
           >
-            <Minimize2 size={13} />
+            <Minimize2 size={12} />
             <span>Fit Page</span>
           </button>
         </div>
 
-        {/* OCR Background Scanning Badge */}
+        {/* OCR Background Scanning Subtle Badge */}
         {isOcrScanning && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            backgroundColor: 'rgba(245, 158, 11, 0.15)',
-            border: '1px solid rgba(245, 158, 11, 0.4)',
-            borderRadius: '20px',
-            padding: '3px 10px',
-            fontSize: '0.74rem',
+            gap: '5px',
+            backgroundColor: 'rgba(245, 158, 11, 0.08)',
+            border: '1px solid rgba(245, 158, 11, 0.22)',
+            borderRadius: '6px',
+            padding: '2px 8px',
+            fontSize: '0.72rem',
             color: '#fbbf24',
-            fontWeight: 600
+            fontWeight: 500
           }}>
-            <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-            <span>Scanning page text…</span>
+            <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
+            <span>Preparing text…</span>
           </div>
         )}
 
-        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-          Tap word to translate · Drag to select text
+        <span style={{ fontSize: '0.74rem', color: '#64748b' }}>
+          Tap to translate · Drag to select
         </span>
       </div>
 
@@ -600,20 +644,20 @@ export default function VisualPdfReader({
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'flex-start',
-          backgroundColor: 'var(--bg-dark)',
-          padding: '16px 12px 100px',
+          backgroundColor: '#0e1117',
+          padding: '24px 16px 100px',
           boxSizing: 'border-box',
           width: '100%',
           height: '100%',
-          transition: 'background-color 0.25s ease'
+          transition: 'background-color 0.15s ease'
         }}
       >
         {pdfError ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '16px', marginTop: '60px', padding: '24px', backgroundColor: '#1a1d2e', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.3)', maxWidth: '400px' }}>
-            <AlertTriangle size={42} color="#ef4444" />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '16px', marginTop: '60px', padding: '24px', backgroundColor: '#161922', borderRadius: '12px', border: '1px solid rgba(225, 29, 72, 0.3)', maxWidth: '400px' }}>
+            <AlertTriangle size={36} color="#e11d48" />
             <div>
-              <h3 style={{ margin: '0 0 6px', color: '#fff' }}>PDF Reader Notice</h3>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8' }}>
+              <h3 style={{ margin: '0 0 6px', color: '#f8fafc', fontSize: '0.95rem' }}>PDF Reader Notice</h3>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8' }}>
                 {pdfError}
               </p>
             </div>
@@ -628,8 +672,9 @@ export default function VisualPdfReader({
               width: containerSize.w > 0 ? `${containerSize.w}px` : 'auto',
               height: containerSize.h > 0 ? `${containerSize.h}px` : 'auto',
               cursor: 'text',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.7)',
-              borderRadius: '6px',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '4px',
               overflow: 'hidden',
               opacity: pageLoading ? 0.6 : 1,
               transition: 'opacity 0.15s ease',
@@ -657,19 +702,19 @@ export default function VisualPdfReader({
                   overflow: 'hidden'
                 }}
               >
-                {/* Active Tapped Word Highlight Box (only shown for single-tap translation) */}
+                {/* Active Tapped Word Highlight Box: Subtle blue border/fill */}
                 {selectedWordToken && (
                   <div
                     style={{
                       position: 'absolute',
-                      left: `${selectedWordToken.x - 2}px`,
-                      top: `${selectedWordToken.y - 2}px`,
-                      width: `${selectedWordToken.w + 4}px`,
-                      height: `${selectedWordToken.h + 4}px`,
-                      backgroundColor: 'rgba(245, 158, 11, 0.35)',
-                      border: '2px solid #f59e0b',
-                      borderRadius: '4px',
-                      boxShadow: '0 0 12px rgba(245, 158, 11, 0.6)',
+                      left: `${selectedWordToken.x - 1}px`,
+                      top: `${selectedWordToken.y - 1}px`,
+                      width: `${selectedWordToken.w + 2}px`,
+                      height: `${selectedWordToken.h + 2}px`,
+                      backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                      border: '1.5px solid rgba(59, 130, 246, 0.8)',
+                      borderRadius: '3px',
+                      boxShadow: '0 0 8px rgba(59, 130, 246, 0.25)',
                       pointerEvents: 'none',
                       zIndex: 10,
                       transition: 'all 0.15s ease-out'
@@ -707,19 +752,19 @@ export default function VisualPdfReader({
               </div>
             )}
 
-            {/* Tap Scanning Pulse Animation Indicator */}
+            {/* Tap Scanning Subtle Pulse Indicator */}
             {tapScanningPos && (
               <div
                 style={{
                   position: 'absolute',
-                  left: `${tapScanningPos.x - 18}px`,
-                  top: `${tapScanningPos.y - 18}px`,
-                  width: '36px',
-                  height: '36px',
+                  left: `${tapScanningPos.x - 14}px`,
+                  top: `${tapScanningPos.y - 14}px`,
+                  width: '28px',
+                  height: '28px',
                   borderRadius: '50%',
-                  border: '2px solid #f59e0b',
-                  backgroundColor: 'rgba(245, 158, 11, 0.25)',
-                  boxShadow: '0 0 12px #f59e0b',
+                  border: '1.5px solid #3b82f6',
+                  backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                  boxShadow: '0 0 10px rgba(59, 130, 246, 0.4)',
                   pointerEvents: 'none',
                   zIndex: 20,
                   animation: 'spin 0.8s linear infinite'
@@ -735,9 +780,10 @@ export default function VisualPdfReader({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: 'rgba(0,0,0,0.2)'
+                backgroundColor: 'rgba(0,0,0,0.25)',
+                backdropFilter: 'blur(2px)'
               }}>
-                <Loader2 size={32} color="#f59e0b" style={{ animation: 'spin 1s linear infinite' }} />
+                <Loader2 size={28} color="#3b82f6" style={{ animation: 'spin 1s linear infinite' }} />
               </div>
             )}
           </div>

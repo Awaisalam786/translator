@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Volume2, Bookmark, BookmarkCheck, X } from 'lucide-react'
+import { Volume2, Bookmark, BookmarkCheck, X, Copy, Check } from 'lucide-react'
 import { translateWord, fetchSynonyms } from '../services/translationService'
 
 export default function TranslationSlip({
@@ -17,6 +17,7 @@ export default function TranslationSlip({
   const [translation, setTranslation] = useState('…')
   const [synonyms, setSynonyms] = useState([])
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   // Fetch translation & synonyms
   useEffect(() => {
@@ -86,6 +87,16 @@ export default function TranslationSlip({
     window.speechSynthesis.speak(utterance)
   }
 
+  const handleCopy = (e) => {
+    e.stopPropagation()
+    const cleanTrans = (!translation || translation === '…' || translation === '...') ? word : `${word} — ${translation}`
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(cleanTrans).catch(() => {})
+    }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1600)
+  }
+
   const handleFavoriteClick = (e) => {
     e.stopPropagation()
     if (onToggleFavorite) {
@@ -100,7 +111,7 @@ export default function TranslationSlip({
     }
   }
 
-  // ── Size & Position (anchored to word bottom-left, clamped to screen bounds) ─
+  // ── Size & Position (anchored to word, clamped to screen bounds) ───────────
   let positionStyle = {
     position: 'fixed',
     top: '50%',
@@ -109,18 +120,18 @@ export default function TranslationSlip({
   }
 
   if (targetRect) {
-    const slipMaxWidth = 310
-    const slipEstimatedHeight = 160
-    let top = (targetRect.bottom || (targetRect.top + 20)) + 8
-    let left = Math.max(12, (targetRect.left || (window.innerWidth / 2 - 155)) - 10)
+    const slipMaxWidth = 290
+    const slipEstimatedHeight = 145
+    let top = (targetRect.bottom || (targetRect.top + 20)) + 6
+    let left = Math.max(12, (targetRect.left || (window.innerWidth / 2 - 145)) - 6)
 
     if (left + slipMaxWidth > window.innerWidth - 12) {
       left = Math.max(12, window.innerWidth - slipMaxWidth - 12)
     }
 
-    // If popup would overflow bottom of screen or hit the floating bottom pill, flip cleanly ABOVE the word
-    if (top + slipEstimatedHeight > window.innerHeight - 85) {
-      top = Math.max(60, targetRect.top - slipEstimatedHeight - 8)
+    // If popup would overflow bottom or hit the bottom pill, flip cleanly above
+    if (top + slipEstimatedHeight > window.innerHeight - 80) {
+      top = Math.max(60, targetRect.top - slipEstimatedHeight - 6)
     } else {
       top = Math.max(60, top)
     }
@@ -153,44 +164,47 @@ export default function TranslationSlip({
           zIndex: 9999,
           width: 'max-content',
           minWidth: '220px',
-          maxWidth: '310px',
-          backgroundColor: '#161926',
+          maxWidth: '290px',
+          backgroundColor: '#181b26',
           color: '#f8fafc',
-          border: '1.5px solid rgba(245, 158, 11, 0.4)',
-          borderRadius: '12px',
-          boxShadow: '0 12px 36px rgba(0, 0, 0, 0.75)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: '10px',
+          boxShadow: '0 16px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4)',
           padding: '12px 14px',
           boxSizing: 'border-box',
           animation: 'fadeIn 0.15s ease-out'
         }}
       >
-        {/* Header: Original Tapped Word + Close button */}
+        {/* Header: Selected Word + Language Badge + Close */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: '8px',
-          marginBottom: '6px',
-          paddingBottom: '6px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
+          marginBottom: '8px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
             <span style={{
-              fontSize: '0.88rem',
+              fontSize: '0.92rem',
               fontWeight: 700,
-              color: '#ffffff',
-              letterSpacing: '0.02em'
+              color: '#f8fafc',
+              letterSpacing: '-0.01em',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
             }}>
               {word}
             </span>
             <span style={{
-              fontSize: '0.65rem',
-              fontWeight: 700,
+              fontSize: '0.62rem',
+              fontWeight: 600,
               textTransform: 'uppercase',
-              color: '#f59e0b',
-              backgroundColor: 'rgba(245, 158, 11, 0.15)',
-              padding: '2px 6px',
-              borderRadius: '10px'
+              color: '#94a3b8',
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              flexShrink: 0
             }}>
               {sourceLang}
             </span>
@@ -200,7 +214,7 @@ export default function TranslationSlip({
             onClick={onClose}
             title="Close"
             style={{
-              background: 'none',
+              background: 'transparent',
               border: 'none',
               color: '#94a3b8',
               cursor: 'pointer',
@@ -208,125 +222,129 @@ export default function TranslationSlip({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              borderRadius: '4px'
+              borderRadius: '4px',
+              transition: 'color 0.15s ease'
             }}
           >
             <X size={14} />
           </button>
         </div>
 
-        {/* Translation text + Actions */}
+        {/* Translation Section */}
+        <div style={{
+          fontSize: '1.05rem',
+          fontWeight: 600,
+          color: '#60a5fa',
+          lineHeight: 1.35,
+          wordBreak: 'break-word',
+          marginBottom: '8px'
+        }}>
+          {loading ? (
+            <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 500 }}>Translating…</span>
+          ) : translation}
+        </div>
+
+        {/* Synonyms Section */}
+        {!loading && synonyms && synonyms.length > 0 && (
+          <div style={{
+            marginBottom: '10px',
+            fontSize: '0.74rem',
+            lineHeight: 1.3,
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: '4px',
+            overflow: 'hidden'
+          }}>
+            <span style={{ color: '#64748b', fontWeight: 500, flexShrink: 0 }}>Synonyms:</span>
+            <span style={{ color: '#cbd5e1', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {synonyms.slice(0, 4).join(', ')}
+            </span>
+          </div>
+        )}
+
+        {/* Compact Bottom Action Bar: Pronounce | Copy | Save */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '10px'
+          gap: '6px',
+          paddingTop: '8px',
+          borderTop: '1px solid rgba(255, 255, 255, 0.06)'
         }}>
-          {/* Translation Result */}
-          <div style={{
-            fontSize: '1.15rem',
-            fontWeight: 700,
-            color: '#38bdf8',
-            lineHeight: 1.3,
-            wordBreak: 'break-word'
-          }}>
-            {loading ? (
-              <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Translating…</span>
-            ) : translation}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             {/* Pronounce Button */}
             <button
               onClick={handlePronounce}
-              title="Listen pronunciation"
+              title="Pronounce word"
               style={{
-                background: isSpeaking ? '#f59e0b' : 'rgba(255, 255, 255, 0.08)',
-                border: isSpeaking ? '1px solid #f59e0b' : '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: '50%',
-                width: '30px',
-                height: '30px',
+                background: isSpeaking ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                border: isSpeaking ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '6px',
+                width: '28px',
+                height: '28px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: isSpeaking ? '#ffffff' : '#f59e0b',
+                color: isSpeaking ? '#60a5fa' : '#94a3b8',
                 cursor: 'pointer',
                 padding: 0,
-                transition: 'background-color 0.15s ease'
+                transition: 'all 0.15s ease'
               }}
             >
-              <Volume2 size={15} />
+              <Volume2 size={13} />
             </button>
 
-            {/* Quick Favorite Icon */}
+            {/* Copy Button */}
             <button
-              onClick={handleFavoriteClick}
-              title={isFavorite ? 'Remove from Deck' : 'Add to Deck'}
+              onClick={handleCopy}
+              title={copied ? 'Copied to clipboard' : 'Copy translation'}
               style={{
-                background: isFavorite ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 255, 255, 0.08)',
-                border: isFavorite ? '1px solid #f59e0b' : '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: '50%',
-                width: '30px',
-                height: '30px',
+                background: copied ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                border: copied ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '6px',
+                width: '28px',
+                height: '28px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: isFavorite ? '#fbbf24' : '#94a3b8',
+                color: copied ? '#34d399' : '#94a3b8',
                 cursor: 'pointer',
-                padding: 0
+                padding: 0,
+                transition: 'all 0.15s ease'
               }}
             >
-              {isFavorite ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
+              {copied ? <Check size={13} /> : <Copy size={13} />}
             </button>
           </div>
-        </div>
 
-        {/* Synonyms line */}
-        {!loading && synonyms && synonyms.length > 0 && (
-          <div style={{
-            marginTop: '8px',
-            paddingTop: '6px',
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-            fontSize: '0.78rem',
-            color: '#94a3b8',
-            lineHeight: 1.3
-          }}>
-            <span style={{ fontWeight: 600, color: '#f59e0b' }}>Synonyms: </span>
-            <span style={{ color: '#e2e8f0' }}>{synonyms.join(', ')}</span>
-          </div>
-        )}
-
-        {/* Save to Vocabulary Deck button */}
-        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+          {/* Save to Vocabulary Deck Button */}
           <button
             onClick={handleFavoriteClick}
             style={{
-              width: '100%',
-              padding: '7px 12px',
-              borderRadius: '8px',
-              border: isFavorite ? '1px solid rgba(245, 158, 11, 0.5)' : 'none',
-              backgroundColor: isFavorite ? 'rgba(245, 158, 11, 0.2)' : 'var(--accent-gold)',
-              background: isFavorite ? 'rgba(245, 158, 11, 0.2)' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-              color: isFavorite ? '#fbbf24' : '#ffffff',
-              fontSize: '0.82rem',
-              fontWeight: 700,
+              background: isFavorite ? 'rgba(225, 29, 72, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+              border: isFavorite ? '1px solid rgba(225, 29, 72, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '6px',
+              color: isFavorite ? '#f43f5e' : '#f8fafc',
+              padding: '0 10px',
+              height: '28px',
+              fontSize: '0.74rem',
+              fontWeight: 500,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              minHeight: '34px'
+              gap: '5px',
+              transition: 'all 0.15s ease'
             }}
           >
             {isFavorite ? (
               <>
-                <BookmarkCheck size={14} />
-                <span>Saved in Vocabulary Deck</span>
+                <BookmarkCheck size={12} />
+                <span>Saved</span>
               </>
             ) : (
               <>
-                <Bookmark size={14} />
-                <span>Save to Vocabulary Deck</span>
+                <Bookmark size={12} />
+                <span>Save to Deck</span>
               </>
             )}
           </button>

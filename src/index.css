@@ -2,18 +2,19 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Georgia&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap');
 
 :root {
-  --bg-dark: #0f121d;
-  --bg-card: #161926;
-  --bg-paper: #1c2030;
+  --bg-dark: #0e1117;
+  --bg-card: #161922;
+  --bg-paper: #181b26;
   --accent-gold: #f59e0b;
   --accent-gold-hover: #d97706;
   --accent-yellow: #f59e0b;
-  --accent-red: #ef4444;
-  --text-main: #f1f5f9;
+  --accent-red: #e11d48;
+  --accent-blue: #3b82f6;
+  --text-main: #f8fafc;
   --text-bright: #ffffff;
   --text-muted: #94a3b8;
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-serif: 'Merriweather', 'Georgia', serif;
 
   /* Safe Area Insets for iPhone / Android Notches & Dynamic Island */
@@ -180,33 +181,31 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* Tappable Words */
 .tappable-word:hover, .pdf-word-span:hover {
-  background-color: rgba(245, 158, 11, 0.25) !important;
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.5) !important;
+  background-color: rgba(59, 130, 246, 0.15) !important;
   border-radius: 3px !important;
-  color: #fbbf24 !important;
 }
 .tappable-word:active, .pdf-word-span:active {
-  background-color: rgba(245, 158, 11, 0.4) !important;
-  box-shadow: 0 0 0 2px #f59e0b !important;
+  background-color: rgba(59, 130, 246, 0.25) !important;
   border-radius: 3px !important;
 }
 
 /* Nav Button Style */
 .nav-btn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  color: var(--text-bright);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-main);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  min-width: 44px;
-  transition: background-color 0.15s ease;
+  min-height: 36px;
+  min-width: 36px;
+  transition: all 0.15s ease;
 }
 .nav-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-bright);
 }
 
 /* Spinner Loader */

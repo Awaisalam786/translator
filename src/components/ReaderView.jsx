@@ -98,44 +98,47 @@ export default function ReaderView({
       {/* ── Top Bar Header ────────────────────────────────────────────────────── */}
       <header style={{
         flexShrink: 0,
-        backgroundColor: 'var(--bg-card)',
-        borderBottom: '1px solid var(--border-subtle)',
-        padding: '10px 14px',
+        backgroundColor: '#161922',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.07)',
+        padding: '0 16px',
+        height: '52px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         position: 'relative',
         zIndex: 50,
-        gap: '10px'
+        gap: '12px'
       }}>
         {/* Left: Back to Shelf & Book Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', flexShrink: 0, maxWidth: '40%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden', flexShrink: 0, maxWidth: '40%' }}>
           <button
             onClick={onBackToLibrary}
             style={{
-              background: 'rgba(255, 255, 255, 0.12)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px',
-              color: '#ffffff',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.09)',
+              borderRadius: '6px',
+              color: '#f8fafc',
               padding: '6px 12px',
-              fontSize: '0.85rem',
-              fontWeight: 700,
+              fontSize: '0.8rem',
+              fontWeight: 500,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              flexShrink: 0
+              flexShrink: 0,
+              minHeight: '34px',
+              transition: 'background-color 0.15s ease'
             }}
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={15} />
             <span>Shelf</span>
           </button>
 
           <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
             <h2 style={{
-              fontFamily: '"Merriweather", "Georgia", serif',
-              fontSize: '0.9rem',
-              fontWeight: 700,
+              fontFamily: 'var(--font-sans)',
+              fontSize: '0.88rem',
+              fontWeight: 600,
               color: '#f8fafc',
               margin: 0,
               overflow: 'hidden',
@@ -143,7 +146,7 @@ export default function ReaderView({
             }}>
               {book.title}
             </h2>
-            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+            <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
               {book.sourceLangName || 'German'} · {book.totalPages} pages
             </span>
           </div>
@@ -153,9 +156,9 @@ export default function ReaderView({
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          backgroundColor: '#12151e',
-          padding: '4px 8px',
+          gap: '4px',
+          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+          padding: '3px 6px',
           borderRadius: '8px',
           border: '1px solid rgba(255, 255, 255, 0.08)',
           flexShrink: 0
@@ -164,18 +167,20 @@ export default function ReaderView({
             onClick={() => handlePageChange(currentPage - 1)}
             disabled={currentPage <= 1}
             style={{
-              background: 'rgba(255, 255, 255, 0.08)',
+              background: 'transparent',
               border: 'none',
               borderRadius: '6px',
               color: '#f8fafc',
-              padding: '4px 8px',
+              padding: '5px 8px',
               cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
               opacity: currentPage <= 1 ? 0.3 : 1,
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
               fontSize: '0.78rem',
-              fontWeight: 600
+              fontWeight: 500,
+              minHeight: '28px',
+              transition: 'background-color 0.15s ease'
             }}
           >
             <ChevronLeft size={14} />
@@ -190,11 +195,11 @@ export default function ReaderView({
             onClick={() => handlePageChange(currentPage + 1)}
             disabled={currentPage >= book.totalPages}
             style={{
-              background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
-              border: 'none',
+              background: 'rgba(59, 130, 246, 0.15)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
               borderRadius: '6px',
-              color: '#ffffff',
-              padding: '4px 10px',
+              color: '#60a5fa',
+              padding: '5px 10px',
               cursor: currentPage >= book.totalPages ? 'not-allowed' : 'pointer',
               opacity: currentPage >= book.totalPages ? 0.3 : 1,
               display: 'flex',
@@ -202,7 +207,8 @@ export default function ReaderView({
               gap: '4px',
               fontSize: '0.78rem',
               fontWeight: 600,
-              boxShadow: '0 2px 6px rgba(217, 119, 6, 0.3)'
+              minHeight: '28px',
+              transition: 'background-color 0.15s ease'
             }}
           >
             <span>Next</span>
@@ -220,12 +226,13 @@ export default function ReaderView({
               style={{
                 backgroundColor: '#12151e',
                 color: '#f8fafc',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: '6px',
-                padding: '4px 6px',
+                padding: '5px 8px',
                 fontSize: '0.78rem',
                 cursor: 'pointer',
-                outline: 'none'
+                outline: 'none',
+                minHeight: '34px'
               }}
             >
               <option value="en">English</option>
@@ -245,20 +252,21 @@ export default function ReaderView({
             onClick={() => setShowStorageModal(true)}
             title="Storage Management"
             style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
               borderRadius: '6px',
               color: '#f8fafc',
-              padding: '4px 8px',
+              padding: '6px 10px',
               fontSize: '0.78rem',
-              fontWeight: 600,
+              fontWeight: 500,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px'
+              gap: '6px',
+              minHeight: '34px'
             }}
           >
-            <HardDrive size={14} color="#d97706" />
+            <HardDrive size={14} color="#94a3b8" />
             <span>Storage</span>
           </button>
 
@@ -268,20 +276,21 @@ export default function ReaderView({
               onClick={onOpenTheme}
               title="Theme Settings"
               style={{
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: '6px',
                 color: '#f8fafc',
-                padding: '4px 8px',
+                padding: '6px 10px',
                 fontSize: '0.78rem',
-                fontWeight: 600,
+                fontWeight: 500,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px'
+                gap: '6px',
+                minHeight: '34px'
               }}
             >
-              <Palette size={14} color="#f59e0b" />
+              <Palette size={14} color="#94a3b8" />
               <span>Theme</span>
             </button>
           )}
@@ -291,18 +300,19 @@ export default function ReaderView({
             <button
               onClick={onOpenDeck}
               style={{
-                background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
-                border: 'none',
-                borderRadius: '8px',
-                color: '#ffffff',
-                padding: '5px 10px',
+                background: 'rgba(225, 29, 72, 0.12)',
+                border: '1px solid rgba(225, 29, 72, 0.28)',
+                borderRadius: '6px',
+                color: '#f43f5e',
+                padding: '6px 12px',
                 fontSize: '0.78rem',
                 fontWeight: 600,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '4px',
-                boxShadow: '0 2px 8px rgba(217, 119, 6, 0.3)'
+                gap: '6px',
+                minHeight: '34px',
+                transition: 'all 0.15s ease'
               }}
             >
               <span>Deck ({savedWordsCount})</span>
@@ -310,15 +320,15 @@ export default function ReaderView({
           )}
         </div>
 
-        {/* Thin Progress Bar Line */}
+        {/* Subtle 2px Progress Bar Line */}
         <div style={{
           position: 'absolute',
           bottom: 0,
           left: 0,
           width: `${progressPct}%`,
-          height: '3px',
-          backgroundColor: '#d97706',
-          transition: 'width 0.2s ease'
+          height: '2px',
+          background: 'linear-gradient(90deg, #e11d48 0%, #3b82f6 100%)',
+          transition: 'width 0.25s ease'
         }} />
       </header>
 
@@ -339,66 +349,70 @@ export default function ReaderView({
       {/* ── Floating Bottom Navigation Pill ── */}
       <div style={{
         position: 'fixed',
-        bottom: 'calc(20px + var(--sab))',
+        bottom: 'calc(18px + var(--sab))',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 100,
-        backgroundColor: '#1a1d2e',
-        border: '1px solid rgba(255, 255, 255, 0.15)',
-        borderRadius: '30px',
-        padding: '6px 14px',
+        backgroundColor: 'rgba(22, 25, 34, 0.92)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: '24px',
+        padding: '5px 12px',
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
-        boxShadow: '0 10px 30px rgba(0,0,0,0.6)'
+        gap: '8px',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25)'
       }}>
         {/* Bottom Shelf Button Backup */}
         <button
           onClick={onBackToLibrary}
           title="Back to Shelf"
           style={{
-            background: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            borderRadius: '20px',
-            color: '#f8fafc',
+            background: 'rgba(255, 255, 255, 0.06)',
+            border: 'none',
+            borderRadius: '16px',
+            color: '#94a3b8',
             padding: '5px 10px',
             fontSize: '0.78rem',
-            fontWeight: 600,
+            fontWeight: 500,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px'
+            gap: '4px',
+            minHeight: '30px'
           }}
         >
-          <ArrowLeft size={14} />
+          <ArrowLeft size={13} />
           <span>Shelf</span>
         </button>
 
-        <div style={{ width: '1px', height: '18px', backgroundColor: 'rgba(255,255,255,0.12)' }} />
+        <div style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
 
         <button
           onClick={() => handlePageChange(currentPage - 1)}
           disabled={currentPage <= 1}
           style={{
-            background: 'rgba(255, 255, 255, 0.08)',
+            background: 'transparent',
             border: 'none',
-            borderRadius: '20px',
+            borderRadius: '16px',
             color: '#f8fafc',
-            padding: '5px 12px',
-            fontSize: '0.82rem',
-            fontWeight: 600,
+            padding: '5px 10px',
+            fontSize: '0.8rem',
+            fontWeight: 500,
             cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
             opacity: currentPage <= 1 ? 0.3 : 1,
             display: 'flex',
             alignItems: 'center',
-            gap: '4px'
+            gap: '4px',
+            minHeight: '30px'
           }}
         >
-          <ChevronLeft size={15} />
+          <ChevronLeft size={14} />
           <span>Prev</span>
         </button>
 
-        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#f8fafc', minWidth: '65px', textAlign: 'center' }}>
+        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f8fafc', minWidth: '60px', textAlign: 'center' }}>
           {currentPage} / {book.totalPages}
         </span>
 
@@ -406,23 +420,23 @@ export default function ReaderView({
           onClick={() => handlePageChange(currentPage + 1)}
           disabled={currentPage >= book.totalPages}
           style={{
-            background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
-            border: 'none',
-            borderRadius: '20px',
-            color: '#ffffff',
-            padding: '5px 14px',
-            fontSize: '0.82rem',
+            background: 'rgba(59, 130, 246, 0.2)',
+            border: '1px solid rgba(59, 130, 246, 0.35)',
+            borderRadius: '16px',
+            color: '#60a5fa',
+            padding: '5px 12px',
+            fontSize: '0.8rem',
             fontWeight: 600,
             cursor: currentPage >= book.totalPages ? 'not-allowed' : 'pointer',
             opacity: currentPage >= book.totalPages ? 0.3 : 1,
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            boxShadow: '0 4px 12px rgba(217, 119, 6, 0.4)'
+            minHeight: '30px'
           }}
         >
           <span>Next</span>
-          <ChevronRight size={15} />
+          <ChevronRight size={14} />
         </button>
       </div>
 
@@ -430,7 +444,7 @@ export default function ReaderView({
       <main style={{
         flex: 1,
         overflow: book.type === 'pdf' ? 'hidden' : 'auto',
-        backgroundColor: '#12151e',
+        backgroundColor: '#0e1117',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'flex-start',
