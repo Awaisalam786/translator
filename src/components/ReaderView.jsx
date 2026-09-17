@@ -466,6 +466,8 @@ export default function ReaderView({
             {book.type === 'pdf' && (
               <VisualPdfReader
                 fileBuffer={bookData}
+                bookId={book.id}
+                sourceLang={book.sourceLang || 'de'}
                 currentPage={currentPage}
                 onSelectWord={(word, rect) => handleWordTap(word, '', rect)}
               />

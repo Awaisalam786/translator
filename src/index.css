@@ -150,17 +150,45 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   }
 }
 
+/* Native Selectable PDF Text Layer */
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.pdf-text-layer .pdf-text-word {
+  position: absolute;
+  color: transparent !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text !important;
+  box-sizing: border-box;
+}
+
+/* Semi-transparent blue selection highlight over canvas */
+.pdf-text-layer ::selection {
+  background: rgba(59, 130, 246, 0.35) !important;
+  color: transparent !important;
+}
+
+.pdf-text-layer ::-moz-selection {
+  background: rgba(59, 130, 246, 0.35) !important;
+  color: transparent !important;
+}
+
 /* Tappable Words */
 .tappable-word:hover, .pdf-word-span:hover {
-  background-color: rgba(217, 119, 6, 0.25) !important;
-  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.4) !important;
+  background-color: rgba(245, 158, 11, 0.25) !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.5) !important;
   border-radius: 3px !important;
   color: #fbbf24 !important;
 }
-
-/* OCR Word Hitbox Hover */
-.ocr-word-hitbox:hover {
-  background-color: rgba(217, 119, 6, 0.3) !important;
+.tappable-word:active, .pdf-word-span:active {
+  background-color: rgba(245, 158, 11, 0.4) !important;
+  box-shadow: 0 0 0 2px #f59e0b !important;
+  border-radius: 3px !important;
 }
 
 /* Nav Button Style */

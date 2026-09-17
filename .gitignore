@@ -36,3 +36,7 @@ build/
 *.njsproj
 *.sln
 *.sw?
+
+# Root duplicate traineddata
+/deu.traineddata
+/eng.traineddata

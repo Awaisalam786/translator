@@ -1,26 +1,49 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
-import { ZoomIn, ZoomOut, Loader2, Maximize2, Minimize2, AlertTriangle, RefreshCw } from 'lucide-react'
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { ZoomIn, ZoomOut, Loader2, Maximize2, Minimize2, AlertTriangle } from 'lucide-react'
 import { logMobileDebug } from './DebugOverlay'
+import { recognizePageWithCache, recognizeTapCrop, getTapWorker } from '../services/ocrService'
 
-// Set up PDF.js worker CDN URL with reliable unpkg fallback handling
-const PDFJS_VERSION = pdfjsLib.version || '4.10.38'
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`
+// Set local PDF.js worker from local Vite build bundle (0ms offline load, never times out)
+try {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
+} catch (e) {}
 
-export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectWord }) {
+const getLocalOrigin = () => {
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return window.location.origin
+  }
+  return ''
+}
+
+export default function VisualPdfReader({
+  fileBuffer,
+  bookId = 'pdf_book',
+  sourceLang = 'de',
+  currentPage = 1,
+  onSelectWord
+}) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
   const wrapperRef = useRef(null)
 
   const [pdfDoc, setPdfDoc] = useState(null)
   const [pdfError, setPdfError] = useState(null)
-  const [scaleMode, setScaleMode] = useState('width') // 'width' (Fit Width, fills display), 'page' (Fit Page), or 'custom'
+  const [scaleMode, setScaleMode] = useState('width')
   const [customScale, setCustomScale] = useState(null)
   const [autoScaleW, setAutoScaleW] = useState(1.0)
   const [autoScaleP, setAutoScaleP] = useState(1.0)
   const [loading, setLoading] = useState(true)
   const [pageLoading, setPageLoading] = useState(false)
   const [textItems, setTextItems] = useState([])
+  const [isOcrScanning, setIsOcrScanning] = useState(false)
+  const [tapScanningPos, setTapScanningPos] = useState(null)
+  const [selectedWordToken, setSelectedWordToken] = useState(null)
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+
+  const renderTaskRef = useRef(null)
+  const pointerDownPosRef = useRef({ x: 0, y: 0, time: 0 })
 
   // ── Load PDF Document ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -29,8 +52,6 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     setPdfError(null)
     setPdfDoc(null)
     setTextItems([])
-
-    console.log('[VisualPdfReader] Loading PDF document buffer of size:', fileBuffer?.byteLength || fileBuffer?.length)
 
     const getFreshBuffer = () => {
       try {
@@ -48,32 +69,32 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     }
 
     const loadPdfDoc = async () => {
+      const origin = getLocalOrigin()
+      const docParams = {
+        data: getFreshBuffer(),
+        cMapUrl: `${origin}/cmaps/`,
+        cMapPacked: true,
+        standardFontDataUrl: `${origin}/standard_fonts/`,
+        disableStream: true,
+        disableAutoFetch: false,
+        isEvalSupported: false
+      }
+
       try {
         let pdf = null
         try {
-          const loadingTask = pdfjsLib.getDocument({
-            data: getFreshBuffer(),
-            cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
-            cMapPacked: true,
-            standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
-            disableStream: true,
-            disableAutoFetch: false,
-            disableFontFace: false,
-            isEvalSupported: false
-          })
-
+          const loadingTask = pdfjsLib.getDocument(docParams)
           const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Worker initialization timeout')), 2800)
+            setTimeout(() => reject(new Error('Worker initialization timeout')), 3000)
           )
-
           pdf = await Promise.race([loadingTask.promise, timeoutPromise])
         } catch (wErr) {
-          logMobileDebug(`⚠️ [VisualPdfReader] Worker timeout/error: ${wErr.message}. Retrying in Main-Thread FakeWorker mode...`)
+          logMobileDebug(`⚠️ [VisualPdfReader] Worker notice: ${wErr.message}. Retrying in Main-Thread mode...`)
+          // Fallback with full local cmaps and standard fonts so no fonts are ever missing
           const fallbackTask = pdfjsLib.getDocument({
+            ...docParams,
             data: getFreshBuffer(),
-            disableWorker: true,
-            disableStream: true,
-            disableAutoFetch: false
+            disableWorker: true
           })
           pdf = await fallbackTask.promise
         }
@@ -107,8 +128,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
       const fitW = (vp.width && vp.width > 0) ? (availW / vp.width) : 1.0
       const fitH = (vp.height && vp.height > 0) ? (availH / vp.height) : 1.0
 
-      // Calculate perfect fit width scale for mobile and desktop without artificial 0.75 floor
-      const calculatedFitW = Math.max(0.25, Math.min(fitW, 2.0))
+      const calculatedFitW = Math.max(0.25, Math.min(fitW, 2.2))
       const calculatedFitP = Math.max(0.2, Math.min(fitW, fitH, 1.8))
 
       setAutoScaleW(calculatedFitW)
@@ -136,22 +156,24 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     effectiveScale = autoScaleW
   }
 
-  const renderTaskRef = useRef(null)
+  // Clear active word highlight when page changes
+  useEffect(() => {
+    setSelectedWordToken(null)
+    setTapScanningPos(null)
+  }, [currentPage])
 
-  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
-
-  // ── Render PDF Page to Canvas ─────────────────────────────────────────────
+  // ── Render PDF Page to Canvas & Extract Interactive Words ─────────────────
   useEffect(() => {
     if (!pdfDoc || effectiveScale <= 0) return
     let cancelled = false
     setPageLoading(true)
+    setIsOcrScanning(false)
 
     async function render() {
       try {
         const page = await pdfDoc.getPage(currentPage)
         if (cancelled) return
 
-        // Account for high-DPI Retina mobile screens (devicePixelRatio)
         const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5))
         const renderScale = effectiveScale * dpr
 
@@ -159,11 +181,9 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         const canvas = canvasRef.current
         if (!canvas) return
 
-        // Set internal canvas resolution to high-DPI buffer
         canvas.width = Math.floor(viewport.width)
         canvas.height = Math.floor(viewport.height)
 
-        // Set CSS display dimensions to logical screen size
         const cssWidth = Math.floor(viewport.width / dpr)
         const cssHeight = Math.floor(viewport.height / dpr)
         canvas.style.width = `${cssWidth}px`
@@ -174,13 +194,8 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-        // Cancel any active PDF.js render operation on this canvas before starting a new one (prevents zoom race condition)
         if (renderTaskRef.current) {
-          try {
-            renderTaskRef.current.cancel()
-          } catch (e) {
-            // Ignore cancellation warning
-          }
+          try { renderTaskRef.current.cancel() } catch (e) {}
           renderTaskRef.current = null
         }
 
@@ -193,7 +208,6 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         } catch (renderErr) {
           renderTaskRef.current = null
           if (renderErr?.name === 'RenderingCancelledException' || renderErr?.message?.includes('cancelled')) {
-            logMobileDebug('[VisualPdfReader] Render cancelled due to rapid scale/page change.')
             return
           }
           throw renderErr
@@ -201,93 +215,43 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
 
         if (cancelled) return
 
-        logMobileDebug(`[VisualPdfReader] Crisp Retina Canvas rendered: Page ${currentPage} [Scale: ${effectiveScale.toFixed(2)}x, DPR: ${dpr}x, Resolution: ${canvas.width}x${canvas.height}px]`)
+        logMobileDebug(`[VisualPdfReader] Page ${currentPage} rendered: ${canvas.width}x${canvas.height}px`)
 
-        // Pre-evaluate Operator List to force PDF.js font/CMap objects compilation before text extraction
-        try {
-          await page.getOperatorList()
-          logMobileDebug(`[VisualPdfReader] Page ${currentPage}: getOperatorList() completed. Fonts/CMaps compiled in memory.`)
-        } catch (opErr) {
-          logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} getOperatorList notice: ${opErr.message}`)
-        }
-
-        if (cancelled) return
-
-        // Multi-Strategy Text Extraction Pipeline (Parses Form XObjects, Marked Content & Mixed Image/Text Streams)
+        // ── Text Extraction Phase ──────────────────────────────────────────
         let content = null
-
-        // Strategy 1: Uncombined text extraction (gives exact individual X & Y coordinates for EVERY word in complex layouts)
         try {
           content = await page.getTextContent({ disableCombineTextItems: true })
-          logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 1 (Uncombined): ${content?.items?.length || 0} raw text items`)
         } catch (e1) {
-          logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} Strategy 1 error: ${e1.message}`)
-        }
-
-        // Strategy 2: Standard combined text extraction fallback
-        if (!content || !content.items || content.items.length === 0) {
           try {
             content = await page.getTextContent()
-            logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 2 (Standard): ${content?.items?.length || 0} items extracted`)
-          } catch (e2) {
-            logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} Strategy 2 error: ${e2.message}`)
-          }
+          } catch (e2) {}
         }
 
-        // Strategy 3: Marked Content fallback with 200ms delay
-        if (!content || !content.items || content.items.length === 0) {
-          await new Promise(r => setTimeout(r, 200))
-          if (cancelled) return
-          try {
-            content = await page.getTextContent({ includeMarkedContent: true })
-            logMobileDebug(`[VisualPdfReader] Page ${currentPage} getTextContent() Strategy 3 (Marked): ${content?.items?.length || 0} items extracted`)
-          } catch (e3) {
-            logMobileDebug(`⚠️ [VisualPdfReader] Page ${currentPage} Strategy 3 error: ${e3.message}`)
-          }
-        }
-
-        if (cancelled) return
         const textItemsList = content?.items || []
-
         const tokens = []
+
+        const measureCanvas = document.createElement('canvas')
+        const mCtx = measureCanvas.getContext('2d')
+
         for (const it of textItemsList) {
           if (!it.str || !it.str.trim()) continue
 
           const tx = pdfjsLib.Util.transform(viewport.transform, it.transform)
-          const fh = Math.hypot(tx[0], tx[1]) / dpr
+          const fontScaleX = Math.hypot(tx[0], tx[1]) / dpr
+          const fontScaleY = Math.hypot(tx[2], tx[3]) / dpr || fontScaleX
           const lineX = Math.floor(tx[4] / dpr)
-          const lineY = Math.floor((tx[5] - (fh * dpr * 0.85)) / dpr)
-          const lineH = Math.ceil(fh * 1.25)
-          // Normalize string to NFC and replace soft hyphens / zero-width spaces with standard spaces
-          const fullStr = (it.str || '').normalize('NFC').replace(/[\u00AD\u200B\uFEFF\u200E\u200F\u00A0]/g, ' ')
+          const baselineY = Math.floor(tx[5] / dpr)
+          // Baseline alignment: font ascent is typically 85-90% of font height
+          const lineY = Math.floor(baselineY - (fontScaleY * 0.9))
+          const lineH = Math.ceil(fontScaleY * 1.35)
           const totalW = Math.ceil(it.width * effectiveScale)
 
-          // Measure character width accounting for space/tab gaps across table columns
-          const spaceWidth = Math.max(3, Math.round(fh * 0.38))
-          let nonSpaceCount = 0
-          let spaceCount = 0
-          for (let i = 0; i < fullStr.length; i++) {
-            if (fullStr[i] === ' ' || fullStr[i] === '\t') spaceCount++
-            else nonSpaceCount++
-          }
+          const fullStr = (it.str || '').normalize('NFC').replace(/[\u00AD\u200B\uFEFF\u200E\u200F\u00A0]/g, ' ')
 
-          const totalSpaceW = spaceCount * spaceWidth
-          const nonSpaceTotalW = Math.max(0, totalW - totalSpaceW)
-          const charWidth = nonSpaceCount > 0 ? (nonSpaceTotalW / nonSpaceCount) : spaceWidth
+          mCtx.font = `${Math.round(fontScaleY)}px sans-serif`
+          const measuredTotalW = mCtx.measureText(fullStr).width || totalW
+          const scaleRatio = measuredTotalW > 0 ? (totalW / measuredTotalW) : 1.0
 
-          // Precompute exact cumulative X offset for each character position
-          const charXOffsets = new Array(fullStr.length)
-          let curX = 0
-          for (let i = 0; i < fullStr.length; i++) {
-            charXOffsets[i] = curX
-            if (fullStr[i] === ' ' || fullStr[i] === '\t') {
-              curX += spaceWidth
-            } else {
-              curX += charWidth
-            }
-          }
-
-          // Extract individual words using Unicode property escape matching all international letters
           const regex = /[\p{L}\p{M}\p{N}'-]+/gu
           let match
 
@@ -296,10 +260,12 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
             const cleanWord = rawWord.replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '').trim()
             if (!cleanWord || cleanWord.length < 1) continue
 
-            const startIndex = match.index
-            const lastIndex = match.index + rawWord.length - 1
-            const wordX = Math.floor(lineX + charXOffsets[startIndex])
-            const wordW = Math.max(10, Math.ceil((charXOffsets[lastIndex] + charWidth) - charXOffsets[startIndex]))
+            const prefix = fullStr.substring(0, match.index)
+            const prefixW = mCtx.measureText(prefix).width * scaleRatio
+            const rawWordW = mCtx.measureText(rawWord).width * scaleRatio
+
+            const wordX = Math.floor(lineX + prefixW)
+            const wordW = Math.max(14, Math.ceil(rawWordW))
 
             tokens.push({
               word: cleanWord,
@@ -313,58 +279,32 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           }
         }
 
-        // Strategy 4: Instant Canvas OCR Fallback for 0-token or low-token pages (< 10 words)
-        if (tokens.length < 10 && canvas) {
-          logMobileDebug(`⚠️ [VisualPdfReader] Only ${tokens.length} PDF.str tokens found on Page ${currentPage}. Initiating Canvas Tesseract OCR Fallback...`)
-          try {
-            const { createWorker } = await import('tesseract.js')
-            let worker = null
-            try {
-              worker = await createWorker('deu')
-            } catch {
-              try {
-                worker = await createWorker('eng')
-              } catch {
-                worker = await createWorker()
+        if (cancelled) return
+
+        // ── OCR Fallback for Scanned / Image PDFs ("Pixel Words") ─────────
+        if (tokens.length < 8 && canvas) {
+          logMobileDebug(`[VisualPdfReader] Scanned/Image PDF detected on Page ${currentPage} (${tokens.length} text items). Starting Page OCR...`)
+          setIsOcrScanning(true)
+          // Eagerly warm up tap worker so on-demand taps respond in milliseconds
+          getTapWorker(sourceLang).catch(() => {})
+
+          recognizePageWithCache(bookId, currentPage, canvas, dpr, sourceLang)
+            .then(ocrTokens => {
+              if (cancelled) return
+              setIsOcrScanning(false)
+              if (ocrTokens && ocrTokens.length > 0) {
+                logMobileDebug(`[VisualPdfReader] ✅ OCR complete! Added ${ocrTokens.length} interactive words to Page ${currentPage}`)
+                setTextItems(ocrTokens)
               }
-            }
-
-            const ret = await worker.recognize(canvas)
-            await worker.terminate()
-
-            if (ret?.data?.words) {
-              let ocrAddedCount = 0
-              for (const w of ret.data.words) {
-                const rawText = w.text ? w.text.trim() : ''
-                const clean = rawText.replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '').trim()
-                if (!clean || clean.length < 1) continue
-
-                const bbox = w.bbox
-                const wordX = Math.floor(bbox.x0 / dpr)
-                const wordY = Math.floor(bbox.y0 / dpr)
-                const wordW = Math.max(10, Math.ceil((bbox.x1 - bbox.x0) / dpr))
-                const wordH = Math.max(10, Math.ceil((bbox.y1 - bbox.y0) / dpr))
-
-                tokens.push({
-                  word: clean,
-                  x: wordX,
-                  y: wordY,
-                  w: wordW,
-                  h: wordH,
-                  cx: wordX + wordW / 2,
-                  cy: wordY + wordH / 2
-                })
-                ocrAddedCount++
-              }
-              logMobileDebug(`[VisualPdfReader] ✅ Canvas OCR Fallback completed: Extracted ${ocrAddedCount} word tokens for Page ${currentPage}!`)
-            }
-          } catch (ocrErr) {
-            logMobileDebug(`❌ [VisualPdfReader] Canvas OCR Fallback error on Page ${currentPage}: ${ocrErr.message}`)
-          }
+            })
+            .catch(err => {
+              if (cancelled) return
+              setIsOcrScanning(false)
+              logMobileDebug(`⚠️ [VisualPdfReader] OCR notice: ${err.message}`)
+            })
         }
 
-        logMobileDebug(`[VisualPdfReader] Page ${currentPage}: Final Token Count = ${tokens.length} CSS-aligned word tokens`)
-
+        logMobileDebug(`[VisualPdfReader] Page ${currentPage}: ${tokens.length} vector text tokens ready.`)
         setTextItems(tokens)
         setPageLoading(false)
       } catch (e) {
@@ -372,6 +312,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           console.error('[VisualPdfReader] Render error:', e)
           logMobileDebug(`❌ [VisualPdfReader] Render error: ${e.message}`)
           setPageLoading(false)
+          setIsOcrScanning(false)
         }
       }
     }
@@ -384,35 +325,45 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         renderTaskRef.current = null
       }
     }
-  }, [pdfDoc, currentPage, effectiveScale])
+  }, [pdfDoc, currentPage, effectiveScale, bookId, sourceLang])
 
-  const [selectedWordToken, setSelectedWordToken] = useState(null)
+  // ── Word Selection Dispatcher ─────────────────────────────────────────────
+  const selectToken = useCallback((token) => {
+    if (!token || !token.word) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
 
-  // Clear active word highlight when page changes
-  useEffect(() => {
-    setSelectedWordToken(null)
-  }, [currentPage])
+    setSelectedWordToken(token)
+    setTapScanningPos(null)
 
-  // ── Mobile Touch & Click Tap-to-Translate Handler ──────────────────────────────
-  const handleTapOnPage = useCallback((clientX, clientY) => {
+    const clickRect = {
+      left: rect.left + token.x,
+      top: rect.top + token.y,
+      bottom: rect.top + token.y + token.h,
+      right: rect.left + token.x + token.w,
+      width: token.w,
+      height: token.h
+    }
+
+    logMobileDebug(`[VisualPdfReader] 🎯 Selected Word: "${token.word}"`)
+    onSelectWord(token.word, clickRect)
+  }, [onSelectWord])
+
+  // ── Mobile Touch & Click Tap-to-Translate Fallback Handler ────────────────
+  const handleTapOnPage = useCallback(async (clientX, clientY) => {
     const canvas = canvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     if (!rect || rect.width === 0 || rect.height === 0) return
 
-    if (!textItems.length) {
-      logMobileDebug(`⚠️ [VisualPdfReader] Tap ignored: 0 text tokens available on Page ${currentPage}`)
-      return
-    }
-
-    // Calculate tap offset in CSS DOM display space
     const domX = clientX - rect.left
     const domY = clientY - rect.top
 
-    // Pass 1: Bounding Box Containment (8px finger touch padding)
+    // 1. Check existing tokens with generous finger touch padding
     let matchedToken = null
-    const padX = 8
-    const padY = 6
+    const padX = 12
+    const padY = 10
 
     for (const token of textItems) {
       if (domX >= (token.x - padX) && domX <= (token.x + token.w + padX) &&
@@ -422,11 +373,11 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
       }
     }
 
-    // Pass 2: Same-Row Search (Restricted strictly to the SAME line, 32px max offset)
+    // 2. Same-Row Horizontal Search (Within 50px)
     if (!matchedToken) {
-      let minRowXDist = 32
+      let minRowXDist = 50
       for (const token of textItems) {
-        const inSameRow = (domY >= (token.y - 8) && domY <= (token.y + token.h + 8))
+        const inSameRow = (domY >= (token.y - 14) && domY <= (token.y + token.h + 14))
         if (inSameRow) {
           const xDist = Math.abs(domX - token.cx)
           if (xDist < minRowXDist) {
@@ -437,9 +388,9 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
       }
     }
 
-    // Pass 3: Fallback 18px Radius Search
+    // 3. Generous Radius Search (Within 35px)
     if (!matchedToken) {
-      let minFallbackDist = 18
+      let minFallbackDist = 35
       for (const token of textItems) {
         const dist = Math.hypot(domX - token.cx, domY - token.cy)
         if (dist < minFallbackDist) {
@@ -450,31 +401,80 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
     }
 
     if (matchedToken) {
-      logMobileDebug(`[VisualPdfReader] ✅ Word Tapped: "${matchedToken.word}" (x:${matchedToken.x}, y:${matchedToken.y}, w:${matchedToken.w})`)
-      setSelectedWordToken(matchedToken)
-      const clickRect = {
-        left: rect.left + matchedToken.x,
-        top: rect.top + matchedToken.y,
-        bottom: rect.top + matchedToken.y + matchedToken.h,
-        right: rect.left + matchedToken.x + matchedToken.w,
-        width: matchedToken.w,
-        height: matchedToken.h
-      }
-      onSelectWord(matchedToken.word, clickRect)
-    } else {
-      logMobileDebug(`[VisualPdfReader] Tap at (${Math.round(domX)}, ${Math.round(domY)}) missed all word bounding boxes.`)
+      selectToken(matchedToken)
+      return
     }
-  }, [textItems, currentPage, onSelectWord])
 
-  const handleClick = (e) => {
+    // 4. INSTANT TAP-TO-OCR FALLBACK: For Scanned / Image PDFs ("Pixel Words")
+    logMobileDebug(`[VisualPdfReader] Tap at (${Math.round(domX)}, ${Math.round(domY)}) - running Instant Tap OCR...`)
+    setTapScanningPos({ x: domX, y: domY })
+
+    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2.5))
+    try {
+      const cropToken = await Promise.race([
+        recognizeTapCrop(canvas, domX, domY, dpr, sourceLang),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Tap OCR timeout')), 12000))
+      ])
+
+      setTapScanningPos(null)
+      if (cropToken && cropToken.word) {
+        setTextItems(prev => {
+          const exists = prev.some(t => t.word === cropToken.word && Math.abs(t.x - cropToken.x) < 25 && Math.abs(t.y - cropToken.y) < 25)
+          return exists ? prev : [...prev, cropToken]
+        })
+        selectToken(cropToken)
+      } else {
+        logMobileDebug(`[VisualPdfReader] Tap at (${Math.round(domX)}, ${Math.round(domY)}) detected no text.`)
+      }
+    } catch (e) {
+      setTapScanningPos(null)
+      logMobileDebug(`⚠️ [VisualPdfReader] Tap OCR notice: ${e.message}`)
+    }
+  }, [textItems, selectToken, sourceLang])
+
+  // ── Single Click vs Drag Selection Discriminator ─────────────────────────
+  const handlePointerDown = (e) => {
+    pointerDownPosRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      time: Date.now()
+    }
+  }
+
+  const handlePointerUp = (e) => {
+    const dx = Math.abs(e.clientX - pointerDownPosRef.current.x)
+    const dy = Math.abs(e.clientY - pointerDownPosRef.current.y)
+    const dist = Math.hypot(dx, dy)
+
+    // Check if user has an active text selection from dragging
+    const selection = window.getSelection()
+    const hasSelection = selection && !selection.isCollapsed && selection.toString().trim().length > 0
+
+    // If dragged (> 6px movement) or text is selected, allow native text selection and DO NOT trigger single-word tap dictionary
+    if (dist > 6 || hasSelection) {
+      return
+    }
+
+    // Single click / tap: find target token directly from clicked DOM span
+    const wordSpan = e.target.closest('.pdf-text-word')
+    if (wordSpan && wordSpan.dataset.tokenIdx != null) {
+      const idx = Number(wordSpan.dataset.tokenIdx)
+      const token = textItems[idx]
+      if (token) {
+        selectToken(token)
+        return
+      }
+    }
+
+    // Fallback: clicked on canvas or between tokens
     handleTapOnPage(e.clientX, e.clientY)
   }
 
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '12px', color: '#94a3b8' }}>
-        <Loader2 size={32} color="#d97706" style={{ animation: 'spin 1s linear infinite' }} />
-        <span>Loading PDF document…</span>
+        <Loader2 size={32} color="#f59e0b" style={{ animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontWeight: 600 }}>Loading PDF document…</span>
       </div>
     )
   }
@@ -487,88 +487,111 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '10px',
-        padding: '6px 16px',
+        flexWrap: 'wrap',
+        gap: '8px',
+        padding: '6px 14px',
         backgroundColor: 'var(--bg-card)',
         borderBottom: '1px solid var(--border-subtle)',
         zIndex: 10,
         transition: 'background-color 0.25s ease'
       }}>
-        {/* Zoom Out */}
-        <button
-          onClick={() => {
-            setScaleMode('custom')
-            setCustomScale(s => Math.max(0.4, +((s ?? effectiveScale) - 0.15).toFixed(2)))
-          }}
-          title="Zoom Out"
-          style={{
-            background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)',
-            borderRadius: '6px', color: 'var(--text-bright)', padding: '4px 8px', cursor: 'pointer'
-          }}
-        >
-          <ZoomOut size={15} />
-        </button>
+        {/* Zoom Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button
+            onClick={() => {
+              setScaleMode('custom')
+              setCustomScale(s => Math.max(0.4, +((s ?? effectiveScale) - 0.15).toFixed(2)))
+            }}
+            title="Zoom Out"
+            style={{
+              background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)',
+              borderRadius: '6px', color: 'var(--text-bright)', padding: '6px 10px', cursor: 'pointer',
+              minHeight: '36px', minWidth: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}
+          >
+            <ZoomOut size={15} />
+          </button>
 
-        {/* Current Zoom Percentage */}
-        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-bright)', minWidth: '46px', textAlign: 'center' }}>
-          {Math.round(effectiveScale * 100)}%
-        </span>
+          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-bright)', minWidth: '48px', textAlign: 'center' }}>
+            {Math.round(effectiveScale * 100)}%
+          </span>
 
-        {/* Zoom In */}
-        <button
-          onClick={() => {
-            setScaleMode('custom')
-            setCustomScale(s => Math.min(3.0, +((s ?? effectiveScale) + 0.15).toFixed(2)))
-          }}
-          title="Zoom In"
-          style={{
-            background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)',
-            borderRadius: '6px', color: 'var(--text-bright)', padding: '4px 8px', cursor: 'pointer'
-          }}
-        >
-          <ZoomIn size={15} />
-        </button>
+          <button
+            onClick={() => {
+              setScaleMode('custom')
+              setCustomScale(s => Math.min(3.0, +((s ?? effectiveScale) + 0.15).toFixed(2)))
+            }}
+            title="Zoom In"
+            style={{
+              background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)',
+              borderRadius: '6px', color: 'var(--text-bright)', padding: '6px 10px', cursor: 'pointer',
+              minHeight: '36px', minWidth: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}
+          >
+            <ZoomIn size={15} />
+          </button>
+        </div>
 
-        {/* Fit Width Button (Fills screen display width comfortably) */}
-        <button
-          onClick={() => {
-            setScaleMode('width')
-            setCustomScale(null)
-          }}
-          style={{
-            background: scaleMode === 'width' ? 'var(--accent-gold)' : 'rgba(255,255,255,0.06)',
-            border: 'none', borderRadius: '6px', color: '#ffffff',
-            padding: '4px 10px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '4px'
-          }}
-        >
-          <Maximize2 size={13} />
-          <span>Fit Width</span>
-        </button>
+        {/* Fit Modes */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            onClick={() => {
+              setScaleMode('width')
+              setCustomScale(null)
+            }}
+            style={{
+              background: scaleMode === 'width' ? 'var(--accent-gold)' : 'rgba(255,255,255,0.06)',
+              border: 'none', borderRadius: '6px', color: '#ffffff',
+              padding: '6px 12px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '4px', minHeight: '36px'
+            }}
+          >
+            <Maximize2 size={13} />
+            <span>Fit Width</span>
+          </button>
 
-        {/* Fit Page Button */}
-        <button
-          onClick={() => {
-            setScaleMode('page')
-            setCustomScale(null)
-          }}
-          style={{
-            background: scaleMode === 'page' ? 'var(--accent-gold)' : 'rgba(255,255,255,0.06)',
-            border: 'none', borderRadius: '6px', color: '#ffffff',
-            padding: '4px 10px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: '4px'
-          }}
-        >
-          <Minimize2 size={13} />
-          <span>Fit Page</span>
-        </button>
+          <button
+            onClick={() => {
+              setScaleMode('page')
+              setCustomScale(null)
+            }}
+            style={{
+              background: scaleMode === 'page' ? 'var(--accent-gold)' : 'rgba(255,255,255,0.06)',
+              border: 'none', borderRadius: '6px', color: '#ffffff',
+              padding: '6px 12px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '4px', minHeight: '36px'
+            }}
+          >
+            <Minimize2 size={13} />
+            <span>Fit Page</span>
+          </button>
+        </div>
 
-        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '10px' }}>
-          Tap any word in the PDF
+        {/* OCR Background Scanning Badge */}
+        {isOcrScanning && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            backgroundColor: 'rgba(245, 158, 11, 0.15)',
+            border: '1px solid rgba(245, 158, 11, 0.4)',
+            borderRadius: '20px',
+            padding: '3px 10px',
+            fontSize: '0.74rem',
+            color: '#fbbf24',
+            fontWeight: 600
+          }}>
+            <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+            <span>Scanning page text…</span>
+          </div>
+        )}
+
+        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+          Tap word to translate · Drag to select text
         </span>
       </div>
 
-      {/* PDF Viewport Container (Fills available space) */}
+      {/* PDF Viewport Container */}
       <div
         ref={wrapperRef}
         style={{
@@ -578,7 +601,7 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
           justifyContent: 'center',
           alignItems: 'flex-start',
           backgroundColor: 'var(--bg-dark)',
-          padding: '16px 12px 90px',
+          padding: '16px 12px 100px',
           boxSizing: 'border-box',
           width: '100%',
           height: '100%',
@@ -598,15 +621,13 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
         ) : (
           <div
             ref={containerRef}
-            onPointerDown={(e) => {
-              handleTapOnPage(e.clientX, e.clientY)
-            }}
-            onClick={handleClick}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
             style={{
               position: 'relative',
               width: containerSize.w > 0 ? `${containerSize.w}px` : 'auto',
               height: containerSize.h > 0 ? `${containerSize.h}px` : 'auto',
-              cursor: 'pointer',
+              cursor: 'text',
               boxShadow: '0 12px 40px rgba(0,0,0,0.7)',
               borderRadius: '6px',
               overflow: 'hidden',
@@ -616,82 +637,110 @@ export default function VisualPdfReader({ fileBuffer, currentPage = 1, onSelectW
               touchAction: 'manipulation'
             }}
           >
-          <canvas ref={canvasRef} style={{ display: 'block', width: containerSize.w > 0 ? `${containerSize.w}px` : 'auto', height: containerSize.h > 0 ? `${containerSize.h}px` : 'auto' }} />
-
-          {/* Interactive Pixel-Perfect Text Layer Overlay */}
-          {!pageLoading && textItems.length > 0 && (
-            <div
-              className="pdf-text-layer"
+            <canvas
+              ref={canvasRef}
               style={{
+                display: 'block',
+                width: containerSize.w > 0 ? `${containerSize.w}px` : 'auto',
+                height: containerSize.h > 0 ? `${containerSize.h}px` : 'auto'
+              }}
+            />
+
+            {/* Interactive Native Selectable Text Layer Overlay */}
+            {!pageLoading && textItems.length > 0 && (
+              <div
+                className="pdf-text-layer"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  pointerEvents: 'auto',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Active Tapped Word Highlight Box (only shown for single-tap translation) */}
+                {selectedWordToken && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${selectedWordToken.x - 2}px`,
+                      top: `${selectedWordToken.y - 2}px`,
+                      width: `${selectedWordToken.w + 4}px`,
+                      height: `${selectedWordToken.h + 4}px`,
+                      backgroundColor: 'rgba(245, 158, 11, 0.35)',
+                      border: '2px solid #f59e0b',
+                      borderRadius: '4px',
+                      boxShadow: '0 0 12px rgba(245, 158, 11, 0.6)',
+                      pointerEvents: 'none',
+                      zIndex: 10,
+                      transition: 'all 0.15s ease-out'
+                    }}
+                  />
+                )}
+
+                {/* Real Selectable Text Word Spans */}
+                {textItems.map((token, idx) => (
+                  <span
+                    key={`${token.word}_${idx}`}
+                    data-token-idx={idx}
+                    className="pdf-text-word"
+                    style={{
+                      position: 'absolute',
+                      left: `${token.x}px`,
+                      top: `${token.y}px`,
+                      width: `${token.w}px`,
+                      height: `${token.h}px`,
+                      fontSize: `${Math.max(9, Math.round(token.h * 0.82))}px`,
+                      lineHeight: `${token.h}px`,
+                      fontFamily: 'sans-serif',
+                      color: 'transparent',
+                      cursor: 'text',
+                      userSelect: 'text',
+                      WebkitUserSelect: 'text',
+                      whiteSpace: 'pre',
+                      overflow: 'hidden'
+                    }}
+                    title={token.word}
+                  >
+                    {token.word + ' '}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Tap Scanning Pulse Animation Indicator */}
+            {tapScanningPos && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${tapScanningPos.x - 18}px`,
+                  top: `${tapScanningPos.y - 18}px`,
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  border: '2px solid #f59e0b',
+                  backgroundColor: 'rgba(245, 158, 11, 0.25)',
+                  boxShadow: '0 0 12px #f59e0b',
+                  pointerEvents: 'none',
+                  zIndex: 20,
+                  animation: 'spin 0.8s linear infinite'
+                }}
+              />
+            )}
+
+            {/* Page Loading Spinner */}
+            {pageLoading && (
+              <div style={{
                 position: 'absolute',
                 inset: 0,
-                pointerEvents: 'none',
-                overflow: 'hidden'
-              }}
-            >
-              {/* Active Tapped Word Highlight Box */}
-              {selectedWordToken && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: `${selectedWordToken.x}px`,
-                    top: `${selectedWordToken.y}px`,
-                    width: `${selectedWordToken.w}px`,
-                    height: `${selectedWordToken.h}px`,
-                    backgroundColor: 'rgba(245, 158, 11, 0.38)',
-                    border: '1.5px solid #f59e0b',
-                    borderRadius: '3px',
-                    boxShadow: '0 0 10px rgba(245, 158, 11, 0.5)',
-                    pointerEvents: 'none',
-                    zIndex: 10,
-                    transition: 'all 0.15s ease-out'
-                  }}
-                />
-              )}
-
-              {textItems.map((token, idx) => (
-                <span
-                  key={`${token.word}_${idx}`}
-                  onPointerDown={(e) => {
-                    e.stopPropagation()
-                    handleTapOnPage(e.clientX, e.clientY)
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleTapOnPage(e.clientX, e.clientY)
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left: `${token.x}px`,
-                    top: `${token.y}px`,
-                    width: `${token.w}px`,
-                    height: `${token.h}px`,
-                    pointerEvents: 'auto',
-                    cursor: 'pointer',
-                    touchAction: 'manipulation',
-                    WebkitUserSelect: 'none',
-                    userSelect: 'none'
-                  }}
-                  className="pdf-word-span"
-                  title={token.word}
-                />
-              ))}
-            </div>
-          )}
-
-          {pageLoading && (
-            <div style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: 'rgba(0,0,0,0.2)'
-            }}>
-              <Loader2 size={32} color="#d97706" style={{ animation: 'spin 1s linear infinite' }} />
-            </div>
-          )}
-        </div>
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: 'rgba(0,0,0,0.2)'
+              }}>
+                <Loader2 size={32} color="#f59e0b" style={{ animation: 'spin 1s linear infinite' }} />
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
